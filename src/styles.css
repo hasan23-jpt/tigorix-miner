@@ -4,6 +4,8 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Tigorix design system: black arena + molten gold */
+
 /*
  * Design system definition.
  *
@@ -63,25 +65,36 @@
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.129 0.042 264.695);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.129 0.042 264.695);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.129 0.042 264.695);
-  --primary: oklch(0.208 0.042 265.755);
-  --primary-foreground: oklch(0.984 0.003 247.858);
-  --secondary: oklch(0.968 0.007 247.896);
-  --secondary-foreground: oklch(0.208 0.042 265.755);
-  --muted: oklch(0.968 0.007 247.896);
-  --muted-foreground: oklch(0.554 0.046 257.417);
-  --accent: oklch(0.968 0.007 247.896);
-  --accent-foreground: oklch(0.208 0.042 265.755);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(0.929 0.013 255.508);
-  --input: oklch(0.929 0.013 255.508);
-  --ring: oklch(0.704 0.04 256.788);
+  --background: oklch(0.16 0.012 60);
+  --foreground: oklch(0.97 0.01 90);
+  --card: oklch(0.21 0.017 60);
+  --card-foreground: oklch(0.97 0.01 90);
+  --popover: oklch(0.19 0.015 60);
+  --popover-foreground: oklch(0.97 0.01 90);
+  --primary: oklch(0.8 0.17 82);
+  --primary-foreground: oklch(0.17 0.02 60);
+  --secondary: oklch(0.28 0.03 55);
+  --secondary-foreground: oklch(0.96 0.02 90);
+  --muted: oklch(0.26 0.02 60);
+  --muted-foreground: oklch(0.72 0.03 80);
+  --accent: oklch(0.68 0.19 45);
+  --accent-foreground: oklch(0.17 0.02 60);
+  --destructive: oklch(0.58 0.22 25);
+  --destructive-foreground: oklch(0.98 0.01 90);
+  --border: oklch(0.32 0.03 65);
+  --input: oklch(0.3 0.025 62);
+  --ring: oklch(0.8 0.17 82);
+  --success: oklch(0.72 0.18 145);
+  --success-foreground: oklch(0.16 0.02 60);
+  --info: oklch(0.7 0.15 240);
+  --info-foreground: oklch(0.16 0.02 60);
+  --gold: oklch(0.84 0.16 88);
+  --gold-deep: oklch(0.68 0.19 55);
+  --gradient-gold: linear-gradient(135deg, oklch(0.88 0.15 92), oklch(0.72 0.19 58));
+  --gradient-surface: linear-gradient(160deg, oklch(0.24 0.02 62), oklch(0.17 0.015 60));
+  --gradient-glow: radial-gradient(circle at 50% 0%, oklch(0.8 0.17 82 / 25%), transparent 70%);
+  --shadow-gold: 0 10px 34px -12px oklch(0.8 0.17 82 / 55%);
+  --shadow-card: 0 18px 40px -24px oklch(0 0 0 / 80%);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -140,5 +153,77 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    background-image: var(--gradient-glow);
+    background-repeat: no-repeat;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+}
+
+@theme inline {
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-gold: var(--gold);
+  --color-gold-deep: var(--gold-deep);
+}
+
+@utility text-gold-gradient {
+  background-image: var(--gradient-gold);
+  background-clip: text;
+  color: transparent;
+}
+
+@utility bg-gold-gradient {
+  background-image: var(--gradient-gold);
+}
+
+@utility surface-card {
+  background-image: var(--gradient-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
+}
+
+@utility glow-gold {
+  box-shadow: var(--shadow-gold);
+}
+
+@layer utilities {
+  @keyframes tg-float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-8px);
+    }
+  }
+  .animate-float {
+    animation: tg-float 3s ease-in-out infinite;
+  }
+  @keyframes tg-pulse-ring {
+    0% {
+      box-shadow: 0 0 0 0 oklch(0.8 0.17 82 / 55%);
+    }
+    100% {
+      box-shadow: 0 0 0 22px oklch(0.8 0.17 82 / 0%);
+    }
+  }
+  .animate-pulse-ring {
+    animation: tg-pulse-ring 1.8s ease-out infinite;
+  }
+  @keyframes tg-shine {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+  .animate-shine {
+    background-size: 200% 100%;
+    animation: tg-shine 2.4s linear infinite;
   }
 }
