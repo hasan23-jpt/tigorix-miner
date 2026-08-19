@@ -2,7 +2,6 @@ import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Home, ListChecks, PlayCircle, User, Users } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
-import logo from "@/assets/tigorix-logo.png.asset.json";
 import { APP, fmt } from "@/lib/config";
 import { AppProvider, useAppState, useBootstrap } from "@/components/app/useApp";
 import { LoadingScreen } from "@/components/app/Loading";
@@ -93,7 +92,7 @@ function Shell() {
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-md flex-col">
       <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-border/60 bg-background/85 px-4 py-3 backdrop-blur">
-        <img src={logo.url} alt="Tigorix logo" className="size-9 rounded-full" />
+        <img src="/tigorix-logo.png" alt="Tigorix logo" className="size-9 rounded-full" />
         <div className="min-w-0">
           <p className="truncate text-sm font-extrabold leading-tight">
             {state.user.username ? `@${state.user.username}` : state.user.firstName || "Tiger"}

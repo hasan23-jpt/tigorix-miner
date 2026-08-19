@@ -1,4 +1,3 @@
-import logo from "@/assets/tigorix-logo.png.asset.json";
 import { GoldButton } from "./ui";
 
 export function LoadingScreen({
@@ -18,7 +17,7 @@ export function LoadingScreen({
       <div className="relative">
         <div className="absolute inset-0 animate-pulse-ring rounded-full" />
         <img
-          src={logo.url}
+          src="/tigorix-logo.png"
           alt="Tigorix logo"
           className="animate-float relative size-44 drop-shadow-[0_10px_30px_rgba(255,170,0,0.35)]"
         />

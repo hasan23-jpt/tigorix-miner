@@ -1,6 +1,5 @@
 /** Telegram Bot API helpers + initData verification. Server only. */
 import { APP } from "./config";
-import banner from "@/assets/tigorix-banner.png.asset.json";
 
 export function botToken() {
   const t = process.env["TELEGRAM_BOT_TOKEN"];
@@ -31,7 +30,7 @@ export const btn = {
 };
 
 export function bannerUrl(origin: string) {
-  return `${origin}${banner.url}`;
+  return `${origin}/tigorix-banner.png`;
 }
 
 export async function sendMessage(

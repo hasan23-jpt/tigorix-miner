@@ -77,8 +77,15 @@ export function AppProvider({
 export function useBootstrap() {
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    initTelegram();
-    setReady(true);
+    let tries = 0;
+    const tick = () => {
+      initTelegram();
+      tries += 1;
+      // The Telegram bridge script can still be loading right after hydration.
+      if (initData() || tries > 25) setReady(true);
+      else setTimeout(tick, 200);
+    };
+    tick();
   }, []);
 
   return useQuery({
