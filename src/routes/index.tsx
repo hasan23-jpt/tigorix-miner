@@ -5,7 +5,7 @@ import { Toaster } from "@/components/ui/sonner";
 import logo from "@/assets/tigorix-logo.png.asset.json";
 import { APP, fmt } from "@/lib/config";
 import { AppProvider, useAppState, useBootstrap } from "@/components/app/useApp";
-import { Loading } from "@/components/app/Loading";
+import { LoadingScreen } from "@/components/app/Loading";
 import { HomeTab } from "@/components/app/HomeTab";
 import { TasksTab } from "@/components/app/TasksTab";
 import { AdsTab } from "@/components/app/AdsTab";
@@ -40,7 +40,10 @@ function Index() {
   if (isLoading || !data) {
     return (
       <>
-        <Loading error={error instanceof Error ? error.message : null} onRetry={() => void refetch()} />
+        <LoadingScreen
+          error={error instanceof Error ? error.message : null}
+          onRetry={() => void refetch()}
+        />
         <Toaster />
       </>
     );
@@ -110,7 +113,7 @@ function Shell() {
         {admin ? (
           <AdminPanel onClose={() => setAdmin(false)} />
         ) : tab === "home" ? (
-          <HomeTab />
+          <HomeTab onNavigate={(t) => setTab(t as TabId)} />
         ) : tab === "tasks" ? (
           <TasksTab />
         ) : tab === "ads" ? (
