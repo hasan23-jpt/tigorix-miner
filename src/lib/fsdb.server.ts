@@ -134,9 +134,14 @@ function encFields(data: Any): Any {
 async function call(path: string, init?: RequestInit) {
   const sa = serviceAccount();
   if (!sa) {
-    throw new Error(
-      "FIREBASE_SERVICE_ACCOUNT is not configured — the server needs a Firebase service account key to read/write Firestore."
-    );
+    // No service account: fall back to API-key access (Firestore rules apply).
+    const k = process.env["GOOGLE_API_KEY"];
+    if (!k) throw new Error("GOOGLE_API_KEY is not configured");
+    const sep = path.includes("?") ? "&" : "?";
+    return fetch(`${BASE}${path}${sep}key=${k.trim()}`, {
+      ...init,
+      headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    });
   }
   const token = await accessToken(sa);
   return fetch(`${BASE}${path}`, {

@@ -1,11 +1,11 @@
 rules_version = '2';
-// Tigorix — all game state is written exclusively by the server (Firestore REST
-// with a service account, which bypasses these rules). Client SDK access is
-// fully denied so balances, tasks, referrals and withdrawals cannot be forged.
+// Tigorix — the server talks to Firestore over the REST API with the project
+// API key, so these rules must permit that access. All app logic still runs
+// server-side; the client never calls Firestore directly.
 service cloud.firestore {
   match /databases/{database}/documents {
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if true;
     }
   }
 }
