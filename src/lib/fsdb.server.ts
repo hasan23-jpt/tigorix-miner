@@ -7,10 +7,91 @@ const BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/
 
 type Any = Record<string, unknown>;
 
-function key() {
-  const k = process.env["GOOGLE_API_KEY"];
-  if (!k) throw new Error("GOOGLE_API_KEY is not configured");
-  return k.trim();
+/**
+ * Server access uses a Google service account (OAuth2 JWT bearer) so the
+ * deny-all Firestore rules do not apply. An API key alone is subject to the
+ * rules and returns PERMISSION_DENIED.
+ */
+type ServiceAccount = { client_email: string; private_key: string; project_id?: string };
+
+function serviceAccount(): ServiceAccount | null {
+  const raw =
+    process.env["FIREBASE_SERVICE_ACCOUNT"] ??
+    process.env["GOOGLE_SERVICE_ACCOUNT"] ??
+    process.env["FIREBASE_SERVICE_ACCOUNT_JSON"];
+  if (!raw) return null;
+  const txt = raw.trim();
+  const json = txt.startsWith("{") ? txt : new TextDecoder().decode(b64ToBytes(txt));
+  const sa = JSON.parse(json) as ServiceAccount;
+  if (!sa.client_email || !sa.private_key) throw new Error("Service account JSON is incomplete");
+  return { ...sa, private_key: sa.private_key.replace(/\\n/g, "\n") };
+}
+
+function b64ToBytes(b64: string) {
+  const clean = b64.replace(/-/g, "+").replace(/_/g, "/");
+  const bin = atob(clean);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function b64url(bytes: ArrayBuffer | Uint8Array) {
+  const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  let bin = "";
+  for (const b of arr) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function importKey(pem: string) {
+  const body = pem
+    .replace(/-----BEGIN PRIVATE KEY-----/, "")
+    .replace(/-----END PRIVATE KEY-----/, "")
+    .replace(/\s+/g, "");
+  return crypto.subtle.importKey(
+    "pkcs8",
+    b64ToBytes(body),
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+}
+
+let cachedToken: { token: string; exp: number } | null = null;
+
+async function accessToken(sa: ServiceAccount) {
+  const now = Math.floor(Date.now() / 1000);
+  if (cachedToken && cachedToken.exp - 60 > now) return cachedToken.token;
+  const header = b64url(new TextEncoder().encode(JSON.stringify({ alg: "RS256", typ: "JWT" })));
+  const claims = b64url(
+    new TextEncoder().encode(
+      JSON.stringify({
+        iss: sa.client_email,
+        scope: "https://www.googleapis.com/auth/datastore",
+        aud: "https://oauth2.googleapis.com/token",
+        iat: now,
+        exp: now + 3600,
+      })
+    )
+  );
+  const signing = `${header}.${claims}`;
+  const sig = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    await importKey(sa.private_key),
+    new TextEncoder().encode(signing)
+  );
+  const jwt = `${signing}.${b64url(sig)}`;
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: jwt,
+    }),
+  });
+  if (!res.ok) throw new Error(`Google auth failed [${res.status}]: ${await res.text()}`);
+  const json = (await res.json()) as { access_token: string; expires_in: number };
+  cachedToken = { token: json.access_token, exp: now + (json.expires_in ?? 3600) };
+  return cachedToken.token;
 }
 
 function enc(value: unknown): Any {
@@ -51,12 +132,21 @@ function encFields(data: Any): Any {
 }
 
 async function call(path: string, init?: RequestInit) {
-  const sep = path.includes("?") ? "&" : "?";
-  const res = await fetch(`${BASE}${path}${sep}key=${key()}`, {
+  const sa = serviceAccount();
+  if (!sa) {
+    throw new Error(
+      "FIREBASE_SERVICE_ACCOUNT is not configured — the server needs a Firebase service account key to read/write Firestore."
+    );
+  }
+  const token = await accessToken(sa);
+  return fetch(`${BASE}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(init?.headers ?? {}),
+    },
   });
-  return res;
 }
 
 export async function getDoc<T = Any>(path: string): Promise<T | null> {
