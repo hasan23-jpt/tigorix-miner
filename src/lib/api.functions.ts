@@ -32,6 +32,7 @@ import {
   saveCfg,
   isAdmin,
   getCfg,
+  payoutProofs,
 } from "./core.server";
 import { verifyInitData } from "./bot.server";
 
@@ -336,3 +337,7 @@ export const adminSendBroadcast = createServerFn({ method: "POST" })
     await adminSession(data.initData, data.password);
     return adminBroadcast(String(data.text ?? "").slice(0, 3000));
   });
+/* ---------------------------- public payout proof ---------------------------- */
+
+/** Unauthenticated: powers the public /payouts proof page and the in-app card. */
+export const getPayoutProofs = createServerFn({ method: "GET" }).handler(async () => payoutProofs());
