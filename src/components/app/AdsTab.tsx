@@ -11,13 +11,13 @@ import { Card, GhostButton, GoldButton, Guide, Pill, SectionTitle, Stat } from "
  * a simple view (no click) counts, and no other app feature depends on them.
  */
 export function AdsTab() {
-  const { state, auth, run, busy } = useAppState();
+  const { state, boot, auth, run, busy } = useAppState();
   const [watching, setWatching] = useState(0);
   const [consent, setConsent] = useState(false);
   const [sub, setSub] = useState<"ads" | "sites">("ads");
 
-  const adReward = state.cfg.adReward ?? 2;
-  const cap = state.cfg.adsDailyCap ?? 20;
+  const adReward = boot.cfg.adReward ?? 2;
+  const cap = boot.cfg.adsDailyCap ?? 20;
   const left = Math.max(0, cap - (state.user.adsToday ?? 0));
 
   useEffect(() => {
