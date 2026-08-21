@@ -683,6 +683,45 @@ export async function listWithdrawals(userId: string): Promise<WithdrawRow[]> {
   return rows.sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
 }
 
+/**
+ * Public, unauthenticated proof-of-payout feed. Shows every approved payout
+ * (masked user handle, amount, fee, net USD and the on-chain transaction id)
+ * so anyone — including reviewers — can verify that rewards are really paid.
+ */
+export async function payoutProofs() {
+  const rows = await queryDocs<WithdrawRow>("withdrawals", { limit: 300 });
+  const approved = rows
+    .filter((w) => w.status === "approved")
+    .sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
+  return {
+    totalPaidUsd: approved.reduce((s, w) => s + (w.netUsd ?? 0), 0),
+    totalPayouts: approved.length,
+    tokensPerUsd: APP.tokensPerUsd,
+    payouts: approved.slice(0, 50).map((w) => ({
+      id: w.id,
+      number: w.number,
+      user: maskHandle(w.name),
+      tokens: w.tokens ?? 0,
+      feeUsd: w.feeUsd ?? 0,
+      netUsd: w.netUsd ?? 0,
+      txId: w.txId ?? "",
+      txUrl: w.txId ? `https://bscscan.com/tx/${w.txId}` : "",
+      wallet: maskWallet(w.wallet ?? ""),
+      at: w.at ?? 0,
+    })),
+  };
+}
+
+function maskHandle(name: string) {
+  const n = String(name || "User");
+  if (n.length <= 4) return n;
+  return `${n.slice(0, 3)}***${n.slice(-1)}`;
+}
+
+function maskWallet(w: string) {
+  return w.length > 12 ? `${w.slice(0, 6)}…${w.slice(-4)}` : w;
+}
+
 export async function leaderboard() {
   const users = await queryDocs<UserDoc>("users", {
     orderBy: { field: "totalEarned", dir: "DESCENDING" },
