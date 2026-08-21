@@ -61,6 +61,8 @@ export const bootstrap = createServerFn({ method: "POST" })
         refDay2: cfg.refDay2,
         day1Ads: cfg.day1Ads,
         day2Ads: cfg.day2Ads,
+        adReward: cfg.adReward,
+        adsDailyCap: cfg.adsDailyCap,
         minWithdrawFirst: cfg.minWithdrawFirst,
         minWithdrawNext: cfg.minWithdrawNext,
         feeFlatUsd: cfg.feeFlatUsd,
@@ -202,7 +204,7 @@ export const getReferrals = createServerFn({ method: "POST" })
     return {
       ...overview,
       rewards: { join: cfg.refJoin, day1: cfg.refDay1, day2: cfg.refDay2 },
-      ads: { day1: cfg.day1Ads, day2: cfg.day2Ads },
+      activity: { day1: cfg.day1Ads, day2: cfg.day2Ads },
     };
   });
 

@@ -14,6 +14,8 @@ export type Cfg = {
   refDay2: number;
   day1Ads: number;
   day2Ads: number;
+  adReward: number;
+  adsDailyCap: number;
   minWithdrawFirst: number;
   minWithdrawNext: number;
   feeFlatUsd: number;
@@ -31,8 +33,10 @@ const DEFAULT_CFG: Cfg = {
   refJoin: 250,
   refDay1: 500,
   refDay2: 750,
-  day1Ads: 10,
-  day2Ads: 15,
+  day1Ads: 1,
+  day2Ads: 1,
+  adReward: 2,
+  adsDailyCap: 20,
   minWithdrawFirst: 10000,
   minWithdrawNext: 20000,
   feeFlatUsd: 0.01,
@@ -348,6 +352,7 @@ export async function claimDaily(user: UserDoc) {
   user.dailyStreak = day >= 7 ? 0 : day;
   user.dailyLast = utcDayKey();
   await credit(user, reward, "daily", `Daily reward day ${day}`);
+  await advanceReferral(user, await getCfg());
   return { reward, day, balance: user.balance };
 }
 
@@ -445,10 +450,17 @@ export async function claimTask(user: UserDoc, taskId: string, openedAt: number)
 
 /* ------------------------------ ads / referrals ------------------------ */
 
+/**
+ * Optional, opt-in rewarded ad view. Ads never gate any app feature and the
+ * reward is intentionally small; every other earning path works without ads.
+ */
 export async function recordAdView(user: UserDoc, cfg: Cfg) {
   assertActive(user);
   const today = utcDayKey();
-  const adsToday = user.adsDayKey === today ? user.adsToday + 1 : 1;
+  const seenToday = user.adsDayKey === today ? (user.adsToday ?? 0) : 0;
+  if (seenToday >= cfg.adsDailyCap)
+    throw new Error(`📺 Daily ad limit reached (${cfg.adsDailyCap}). Come back after 00:00 UTC.`);
+  const adsToday = seenToday + 1;
   await setDoc(`users/${user.id}`, {
     adsDayKey: today,
     adsToday,
@@ -457,8 +469,16 @@ export async function recordAdView(user: UserDoc, cfg: Cfg) {
   user.adsDayKey = today;
   user.adsToday = adsToday;
   user.adsTotal = (user.adsTotal ?? 0) + 1;
+  const reward = Math.max(0, cfg.adReward);
+  if (reward > 0) await credit(user, reward, "ad", "Rewarded ad view");
+  return { adsToday, adsTotal: user.adsTotal, reward, balance: user.balance };
+}
 
-  // Referral progression is driven by the referred user's ad views.
+/**
+ * Referral milestones are driven by genuine daily activity (daily check-in),
+ * never by ad views, so nothing pushes a user toward watching advertising.
+ */
+export async function advanceReferral(user: UserDoc, cfg: Cfg) {
   const ref = await getDoc<{
     referrer: string;
     status: string;
@@ -469,45 +489,42 @@ export async function recordAdView(user: UserDoc, cfg: Cfg) {
     day2Paid: boolean;
     createdAt: number;
   }>(`referrals/${user.id}`);
-  if (ref && !ref.fake) {
-    const dayIndex = Math.floor((Date.now() - (ref.createdAt ?? 0)) / 86400000) + 1;
-    const patch: Record<string, unknown> = {};
-    if (dayIndex <= 1) patch["day1Ads"] = (ref.day1Ads ?? 0) + 1;
-    else if (dayIndex === 2) patch["day2Ads"] = (ref.day2Ads ?? 0) + 1;
-    const day1 = Number(patch["day1Ads"] ?? ref.day1Ads ?? 0);
-    const day2 = Number(patch["day2Ads"] ?? ref.day2Ads ?? 0);
+  if (!ref || ref.fake) return;
+  const dayIndex = Math.floor((Date.now() - (ref.createdAt ?? 0)) / 86400000) + 1;
+  const patch: Record<string, unknown> = {};
+  if (dayIndex <= 1) patch["day1Ads"] = (ref.day1Ads ?? 0) + 1;
+  else if (dayIndex === 2) patch["day2Ads"] = (ref.day2Ads ?? 0) + 1;
+  const day1 = Number(patch["day1Ads"] ?? ref.day1Ads ?? 0);
+  const day2 = Number(patch["day2Ads"] ?? ref.day2Ads ?? 0);
 
-    let bonus = 0;
-    if (!ref.day1Paid && day1 >= cfg.day1Ads) {
-      patch["day1Paid"] = true;
-      patch["status"] = "mid";
-      bonus += cfg.refDay1;
-    }
-    if (!ref.day2Paid && day2 >= cfg.day2Ads) {
-      patch["day2Paid"] = true;
-      patch["status"] = "verified";
-      bonus += cfg.refDay2;
-    }
-    await setDoc(`referrals/${user.id}`, patch);
-    if (bonus > 0) {
-      const referrer = await getDoc<UserDoc>(`users/${ref.referrer}`);
-      if (referrer) {
-        await setDoc(`users/${ref.referrer}`, {
-          refEarnPending: (referrer.refEarnPending ?? 0) + bonus,
-          refActive:
-            patch["day2Paid"] === true ? (referrer.refActive ?? 0) + 1 : (referrer.refActive ?? 0),
-        });
-        if (referrer.notifications !== false) {
-          await sendMessage(
-            ref.referrer,
-            `🔥 <b>Referral progress!</b>\n\n👤 ${label(user)}\n🎁 +${bonus} ${APP.tokenName} unlocked\n💼 Claim it in the Refer tab.`,
-            [[btn.miniApp]]
-          );
-        }
-      }
-    }
+  let bonus = 0;
+  if (!ref.day1Paid && day1 >= cfg.day1Ads) {
+    patch["day1Paid"] = true;
+    patch["status"] = "mid";
+    bonus += cfg.refDay1;
   }
-  return { adsToday, adsTotal: user.adsTotal };
+  if (!ref.day2Paid && day2 >= cfg.day2Ads) {
+    patch["day2Paid"] = true;
+    patch["status"] = "verified";
+    bonus += cfg.refDay2;
+  }
+  if (!Object.keys(patch).length) return;
+  await setDoc(`referrals/${user.id}`, patch);
+  if (bonus <= 0) return;
+  const referrer = await getDoc<UserDoc>(`users/${ref.referrer}`);
+  if (!referrer) return;
+  await setDoc(`users/${ref.referrer}`, {
+    refEarnPending: (referrer.refEarnPending ?? 0) + bonus,
+    refActive:
+      patch["day2Paid"] === true ? (referrer.refActive ?? 0) + 1 : (referrer.refActive ?? 0),
+  });
+  if (referrer.notifications !== false) {
+    await sendMessage(
+      ref.referrer,
+      `🔥 <b>Referral progress!</b>\n\n👤 ${label(user)}\n🎁 +${bonus} ${APP.tokenName} unlocked\n💼 Claim it in the Refer tab.`,
+      [[btn.miniApp]]
+    );
+  }
 }
 
 export async function referralOverview(user: UserDoc) {

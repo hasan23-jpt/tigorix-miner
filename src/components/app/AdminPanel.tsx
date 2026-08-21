@@ -503,8 +503,11 @@ const NUMERIC_FIELDS = [
   ["refJoin", "Referral join reward"],
   ["refDay1", "Referral day-1 reward"],
   ["refDay2", "Referral day-2 reward"],
-  ["day1Ads", "Day-1 ads required"],
-  ["day2Ads", "Day-2 ads required"],
+  ["day1Ads", "Day-1 active check-ins required"],
+  ["day2Ads", "Day-2 active check-ins required"],
+  ["adReward", "Reward per optional ad view"],
+  ["adsDailyCap", "Daily optional ad view limit"],
+
   ["minWithdrawFirst", "Min first withdrawal"],
   ["minWithdrawNext", "Min next withdrawals"],
   ["feeFlatUsd", "Flat fee (USD)"],

@@ -1,16 +1,24 @@
 import { useEffect, useState } from "react";
-import { Globe, PlayCircle } from "lucide-react";
+import { Globe, PlayCircle, ShieldCheck } from "lucide-react";
 import { APP, fmt } from "@/lib/config";
 import { openLink } from "@/lib/telegram";
 import { doRecordAd } from "@/lib/api.functions";
 import { useAppState } from "./useApp";
 import { Card, GhostButton, GoldButton, Guide, Pill, SectionTitle, Stat } from "./ui";
 
-/** Ad networks plug in here in a later version; the counter already drives referral verification. */
+/**
+ * Rewarded ads are entirely optional: the user opts in before any ad is shown,
+ * a simple view (no click) counts, and no other app feature depends on them.
+ */
 export function AdsTab() {
-  const { state, auth, run, busy } = useAppState();
+  const { state, boot, auth, run, busy } = useAppState();
   const [watching, setWatching] = useState(0);
+  const [consent, setConsent] = useState(false);
   const [sub, setSub] = useState<"ads" | "sites">("ads");
+
+  const adReward = boot.cfg.adReward ?? 2;
+  const cap = boot.cfg.adsDailyCap ?? 20;
+  const left = Math.max(0, cap - (state.user.adsToday ?? 0));
 
   useEffect(() => {
     if (!watching) return;
@@ -19,19 +27,22 @@ export function AdsTab() {
   }, [watching]);
 
   const finish = () =>
-    void run(() => doRecordAd({ data: { initData: auth } }), () => "✅ View counted!");
+    void run(
+      () => doRecordAd({ data: { initData: auth } }),
+      (r) => `✅ View counted! +${r?.reward ?? adReward} ${APP.tokenName}`
+    );
 
   return (
     <div className="space-y-4">
       <Guide>
-        Watching ads powers your referral verification: 10 ads on day 1 and 15 ads on day 2 unlock
-        the full referral bonus for whoever invited you. More ad networks and paid site visits are
-        coming in the next version.
+        Watching ads here is completely optional. Mining, daily rewards, tasks and referrals all work
+        without ever opening an ad. If you choose to watch one, you simply view it — no clicking is
+        required — and you get a small bonus of {adReward} {APP.tokenName} per view.
       </Guide>
 
       <div className="grid grid-cols-2 gap-3">
-        <Stat emoji="📺" label="Ads today" value={fmt(state.user.adsToday)} />
-        <Stat emoji="🏆" label="Total ads" value={fmt(state.user.adsTotal)} />
+        <Stat emoji="📺" label="Views today" value={`${fmt(state.user.adsToday)}/${fmt(cap)}`} />
+        <Stat emoji="🏆" label="Total views" value={fmt(state.user.adsTotal)} />
       </div>
 
       <div className="surface-card grid grid-cols-2 gap-2 p-1.5">
@@ -49,33 +60,71 @@ export function AdsTab() {
       </div>
 
       {sub === "ads" ? (
-        <Card>
-          <SectionTitle icon="📺" title="Watch Ads" action={<Pill tone="info">Live</Pill>} />
-          <div className="mb-4 grid place-items-center rounded-2xl border border-primary/30 bg-background/50 py-10">
-            <PlayCircle
-              className={`size-16 text-primary ${watching ? "animate-pulse" : "animate-float"}`}
-            />
-            <p className="mt-3 text-sm font-bold">
-              {watching ? `⏳ Watching… ${watching}s` : "Ready to earn 🐯"}
+        <>
+          <Card>
+            <SectionTitle icon="📺" title="Optional Rewarded Ad" action={<Pill tone="info">Opt-in</Pill>} />
+            <div className="mb-4 grid place-items-center rounded-2xl border border-primary/30 bg-background/50 py-10">
+              <PlayCircle
+                className={`size-16 text-primary ${watching ? "animate-pulse" : "animate-float"}`}
+              />
+              <p className="mt-3 text-sm font-bold">
+                {watching ? `⏳ Watching… ${watching}s` : "Ready when you are 🐯"}
+              </p>
+            </div>
+
+            <label className="mb-3 flex items-start gap-2.5 rounded-xl border border-border bg-background/40 p-3">
+              <input
+                type="checkbox"
+                checked={consent}
+                onChange={(e) => setConsent(e.target.checked)}
+                className="mt-0.5 size-4 accent-[hsl(var(--primary))]"
+              />
+              <span className="text-[11px] text-muted-foreground">
+                I agree to be shown an advertisement for this optional bonus. I can decline and keep
+                using every other feature of the app.
+              </span>
+            </label>
+
+            {watching ? (
+              <GhostButton disabled>⏳ Please wait {watching}s</GhostButton>
+            ) : left <= 0 ? (
+              <GhostButton disabled>🌙 Daily limit reached — resets 00:00 UTC</GhostButton>
+            ) : (
+              <GoldButton
+                disabled={busy || !consent}
+                onClick={() => {
+                  setWatching(15);
+                  setTimeout(() => void finish(), 15000);
+                }}
+              >
+                ▶️ Watch Ad (+{adReward} {APP.tokenName})
+              </GoldButton>
+            )}
+            <p className="mt-3 text-center text-[11px] text-muted-foreground">
+              {left} optional views left today · viewing is enough, no clicks needed.
             </p>
-          </div>
-          {watching ? (
-            <GhostButton disabled>⏳ Please wait {watching}s</GhostButton>
-          ) : (
-            <GoldButton
-              disabled={busy}
-              onClick={() => {
-                setWatching(15);
-                setTimeout(() => void finish(), 15000);
-              }}
-            >
-              ▶️ Watch Ad
-            </GoldButton>
-          )}
-          <p className="mt-3 text-center text-[11px] text-muted-foreground">
-            Each verified view counts toward your referral progress.
-          </p>
-        </Card>
+          </Card>
+
+          <Card>
+            <SectionTitle icon="🧾" title="Proof of Payouts" action={<Pill tone="success">Public</Pill>} />
+            <p className="mb-3 text-[11px] text-muted-foreground">
+              Every approved withdrawal is published automatically in our public payment channel with
+              amount, fee and transaction ID, so rewards can be verified by anyone.
+            </p>
+            <div className="grid gap-2">
+              <GoldButton onClick={() => openLink(APP.paymentChannel)}>
+                💳 View Payout Proofs
+              </GoldButton>
+              <GhostButton onClick={() => openLink(APP.communityChannel)}>
+                📣 Community Channel
+              </GhostButton>
+            </div>
+            <p className="mt-3 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
+              <ShieldCheck className="size-3.5 text-success" /> 100,000 {APP.tokenName} = $1 USDT
+              (BEP-20)
+            </p>
+          </Card>
+        </>
       ) : (
         <Card>
           <SectionTitle icon="🌐" title="Visit Sites" action={<Pill>Soon</Pill>} />
