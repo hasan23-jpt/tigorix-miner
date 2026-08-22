@@ -16,6 +16,13 @@ export function AdsTab() {
   const [watching, setWatching] = useState(0);
   const [consent, setConsent] = useState(false);
   const [sub, setSub] = useState<"ads" | "sites">("ads");
+  const { data: proofs } = useQuery({
+    queryKey: ["payout-proofs"],
+    queryFn: () => getPayoutProofs(),
+    refetchInterval: 60000,
+  });
+  const origin = typeof window === "undefined" ? "" : window.location.origin;
+
 
   const adReward = boot.cfg.adReward ?? 2;
   const cap = boot.cfg.adsDailyCap ?? 20;
