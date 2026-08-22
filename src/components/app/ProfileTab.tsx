@@ -87,6 +87,15 @@ export function ProfileTab({ onOpenAdmin }: { onOpenAdmin: () => void }) {
       <Group title="📣 Community">
         <Row icon={<MessageCircle className="size-4" />} label="Community Channel" onClick={() => openLink(APP.communityChannel)} />
         <Row icon={<Globe2 className="size-4" />} label="Payment Channel" onClick={() => openLink(APP.paymentChannel)} />
+        <Row
+          icon={<Receipt className="size-4" />}
+          label="Payout Proofs (public)"
+          onClick={() =>
+            openLink(
+              typeof window === "undefined" ? APP.paymentChannel : `${window.location.origin}/payouts`
+            )
+          }
+        />
       </Group>
 
       <Group title="⚙️ Preferences">
