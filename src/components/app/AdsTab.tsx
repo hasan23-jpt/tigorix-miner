@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Globe, PlayCircle, ShieldCheck } from "lucide-react";
 import { APP, fmt } from "@/lib/config";
 import { openLink } from "@/lib/telegram";
-import { doRecordAd } from "@/lib/api.functions";
+import { doRecordAd, getPayoutProofs } from "@/lib/api.functions";
 import { useAppState } from "./useApp";
 import { Card, GhostButton, GoldButton, Guide, Pill, SectionTitle, Stat } from "./ui";
 
