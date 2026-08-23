@@ -779,8 +779,9 @@ export async function requestWithdraw(user: UserDoc, cfg: Cfg, tokens: number) {
   const number = (user.withdrawCount ?? 0) + 1;
   const id = `${user.id}_${Date.now()}`;
   await credit(user, -amount, "withdraw_hold", `Withdrawal #${number} requested`);
-  await setDoc(`users/${user.id}`, { withdrawCount: number });
+  await setDoc(`users/${user.id}`, { withdrawCount: number, lastWithdrawAt: Date.now() });
   user.withdrawCount = number;
+  user.lastWithdrawAt = Date.now();
   await setDoc(`withdrawals/${id}`, {
     userId: user.id,
     name: label(user),
