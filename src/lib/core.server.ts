@@ -673,6 +673,93 @@ export function withdrawQuote(tokens: number, cfg: Cfg) {
   return { gross, fee, net: Math.max(0, gross - fee) };
 }
 
+export type WithdrawEligibility = {
+  ok: boolean;
+  adsToday: number;
+  adsRequired: number;
+  validRefs: number;
+  refsRequired: number;
+  mainTasksDone: number;
+  mainTasksTotal: number;
+  hasPending: boolean;
+  nextWithdrawAt: number;
+  checks: { key: string; label: string; ok: boolean }[];
+};
+
+/** All gates a user must pass before a withdrawal request is accepted. */
+export async function withdrawEligibility(user: UserDoc, cfg: Cfg): Promise<WithdrawEligibility> {
+  const today = utcDayKey();
+  const adsToday = user.adsDayKey === today ? (user.adsToday ?? 0) : 0;
+
+  const refs = await queryDocs<{ fake: boolean }>("referrals", {
+    where: [{ field: "referrer", op: "EQUAL", value: user.id }],
+    limit: 200,
+  });
+  const validRefs = refs.filter((r) => !r.fake).length;
+
+  const tasks = (await listTasks()).filter((t) => t.group !== "partner");
+  const claims = await queryDocs<{ taskId: string }>("taskClaims", {
+    where: [{ field: "userId", op: "EQUAL", value: user.id }],
+    limit: 500,
+  });
+  const done = new Set(claims.map((c) => c.taskId));
+  const mainTasksDone = tasks.filter((t) => done.has(t.id)).length;
+
+  const pending = await queryDocs("withdrawals", {
+    where: [
+      { field: "userId", op: "EQUAL", value: user.id },
+      { field: "status", op: "EQUAL", value: "pending" },
+    ],
+    limit: 5,
+  });
+
+  const cooldownMs = Math.max(0, cfg.withdrawCooldownHours) * 3600 * 1000;
+  const nextWithdrawAt = (user.lastWithdrawAt ?? 0) + cooldownMs;
+  const cooldownOk = Date.now() >= nextWithdrawAt;
+
+  const checks = [
+    {
+      key: "ads",
+      label: `Watch ${cfg.withdrawAdsRequired} ads today (${adsToday}/${cfg.withdrawAdsRequired})`,
+      ok: adsToday >= cfg.withdrawAdsRequired,
+    },
+    {
+      key: "refs",
+      label: `${cfg.withdrawMinRefs} valid referrals (${validRefs}/${cfg.withdrawMinRefs})`,
+      ok: validRefs >= cfg.withdrawMinRefs,
+    },
+    {
+      key: "tasks",
+      label: `All main tasks done (${mainTasksDone}/${tasks.length})`,
+      ok: tasks.length === 0 || mainTasksDone >= tasks.length,
+    },
+    {
+      key: "pending",
+      label: "No pending withdrawal",
+      ok: !pending.length,
+    },
+    {
+      key: "cooldown",
+      label: cooldownOk
+        ? "Withdrawal cooldown passed"
+        : `Next withdrawal ${new Date(nextWithdrawAt).toISOString().slice(5, 16).replace("T", " ")} UTC`,
+      ok: cooldownOk,
+    },
+  ];
+  return {
+    ok: checks.every((c) => c.ok),
+    adsToday,
+    adsRequired: cfg.withdrawAdsRequired,
+    validRefs,
+    refsRequired: cfg.withdrawMinRefs,
+    mainTasksDone,
+    mainTasksTotal: tasks.length,
+    hasPending: pending.length > 0,
+    nextWithdrawAt,
+    checks,
+  };
+}
+
 export async function requestWithdraw(user: UserDoc, cfg: Cfg, tokens: number) {
   assertActive(user);
   const amount = Math.floor(tokens);
@@ -681,14 +768,12 @@ export async function requestWithdraw(user: UserDoc, cfg: Cfg, tokens: number) {
   if (!Number.isFinite(amount) || amount < min)
     throw new Error(`⚠️ Minimum withdrawal is ${min} ${APP.tokenName}.`);
   if (amount > user.balance) throw new Error("⚠️ Insufficient balance.");
-  const pending = await queryDocs("withdrawals", {
-    where: [
-      { field: "userId", op: "EQUAL", value: user.id },
-      { field: "status", op: "EQUAL", value: "pending" },
-    ],
-    limit: 5,
-  });
-  if (pending.length) throw new Error("⏳ You already have a pending withdrawal.");
+
+  const elig = await withdrawEligibility(user, cfg);
+  if (!elig.ok) {
+    const missing = elig.checks.filter((c) => !c.ok).map((c) => c.label);
+    throw new Error(`⚠️ Withdrawal requirements not met:\n• ${missing.join("\n• ")}`);
+  }
 
   const q = withdrawQuote(amount, cfg);
   const number = (user.withdrawCount ?? 0) + 1;
