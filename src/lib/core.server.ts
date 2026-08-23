@@ -16,6 +16,16 @@ export type Cfg = {
   day2Ads: number;
   adReward: number;
   adsDailyCap: number;
+  adsgramIntBlockId: string;
+  adsgramRewardBlockId: string;
+  intAdReward: number;
+  intAdsDailyCap: number;
+  rewardAdReward: number;
+  rewardAdsDailyCap: number;
+  withdrawAdsRequired: number;
+  withdrawMinRefs: number;
+  withdrawCooldownHours: number;
+  withdrawAdsToWatch: number;
   minWithdrawFirst: number;
   minWithdrawNext: number;
   feeFlatUsd: number;
@@ -33,10 +43,20 @@ const DEFAULT_CFG: Cfg = {
   refJoin: 250,
   refDay1: 500,
   refDay2: 750,
-  day1Ads: 1,
-  day2Ads: 1,
+  day1Ads: 10,
+  day2Ads: 15,
   adReward: 2,
   adsDailyCap: 20,
+  adsgramIntBlockId: "",
+  adsgramRewardBlockId: "",
+  intAdReward: 50,
+  intAdsDailyCap: 10,
+  rewardAdReward: 5,
+  rewardAdsDailyCap: 10,
+  withdrawAdsRequired: 20,
+  withdrawMinRefs: 2,
+  withdrawCooldownHours: 12,
+  withdrawAdsToWatch: 3,
   minWithdrawFirst: 10000,
   minWithdrawNext: 20000,
   feeFlatUsd: 0.01,
@@ -79,6 +99,11 @@ export type UserDoc = {
   adsTotal: number;
   adsDayKey: string;
   adsToday: number;
+  intAdsToday: number;
+  intAdsDayKey: string;
+  rewardAdsToday: number;
+  rewardAdsDayKey: string;
+  lastWithdrawAt: number;
   wallet: string;
   withdrawCount: number;
   totalPaidUsd: number;
@@ -112,6 +137,11 @@ function blankUser(a: AuthUser): UserDoc {
     adsTotal: 0,
     adsDayKey: "",
     adsToday: 0,
+    intAdsToday: 0,
+    intAdsDayKey: "",
+    rewardAdsToday: 0,
+    rewardAdsDayKey: "",
+    lastWithdrawAt: 0,
     wallet: "",
     withdrawCount: 0,
     totalPaidUsd: 0,
@@ -352,7 +382,6 @@ export async function claimDaily(user: UserDoc) {
   user.dailyStreak = day >= 7 ? 0 : day;
   user.dailyLast = utcDayKey();
   await credit(user, reward, "daily", `Daily reward day ${day}`);
-  await advanceReferral(user, await getCfg());
   return { reward, day, balance: user.balance };
 }
 
@@ -448,35 +477,133 @@ export async function claimTask(user: UserDoc, taskId: string, openedAt: number)
   return { reward: task.reward, balance: user.balance };
 }
 
+/* ------------------------------ visit sites ---------------------------- */
+
+export type SiteDoc = {
+  id: string;
+  title: string;
+  url: string;
+  reward: number;
+  active: boolean;
+  createdAt: number;
+};
+
+export async function listSites() {
+  const sites = await queryDocs<SiteDoc>("sites", { limit: 100 });
+  return sites
+    .filter((s) => s.active !== false)
+    .sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
+}
+
+/** Per-site 24h cooldown: returns { siteId: nextClaimableAt }. */
+export async function siteStatus(user: UserDoc) {
+  const claims = await queryDocs<{ siteId: string; at: number }>("siteClaims", {
+    where: [{ field: "userId", op: "EQUAL", value: user.id }],
+    limit: 200,
+  });
+  const out: Record<string, number> = {};
+  for (const c of claims) out[c.siteId] = (c.at ?? 0) + 24 * 3600 * 1000;
+  return out;
+}
+
+export async function claimSite(user: UserDoc, siteId: string, openedAt: number) {
+  assertActive(user);
+  const site = await getDoc<SiteDoc>(`sites/${siteId}`);
+  if (!site || site.active === false) throw new Error("Site is no longer available.");
+  if (!openedAt || Date.now() - openedAt < 10000)
+    throw new Error("⏱ Please stay on the site for at least 10 seconds.");
+
+  const claimId = `${user.id}_${siteId}`;
+  const prev = await getDoc<{ at: number }>(`siteClaims/${claimId}`);
+  if (prev && Date.now() - (prev.at ?? 0) < 24 * 3600 * 1000) {
+    const wait = Math.ceil((24 * 3600 * 1000 - (Date.now() - (prev.at ?? 0))) / 3600000);
+    throw new Error(`⏳ Already claimed — available again in ~${wait}h.`);
+  }
+  await setDoc(`siteClaims/${claimId}`, { userId: user.id, siteId, at: Date.now() });
+  await credit(user, site.reward, "site", `Visit site: ${site.title}`);
+  return { reward: site.reward, balance: user.balance };
+}
+
+export async function adminSaveSite(site: Partial<SiteDoc> & { id?: string }) {
+  const id = site.id || `s${Date.now()}`;
+  await setDoc(`sites/${id}`, {
+    title: String(site.title ?? "New site").slice(0, 80),
+    url: String(site.url ?? "").slice(0, 500),
+    reward: Math.max(0, Math.floor(site.reward ?? 0)),
+    active: site.active !== false,
+    createdAt: site.createdAt ?? Date.now(),
+  });
+  return { id };
+}
+
+export async function adminDeleteSite(id: string) {
+  await deleteDoc(`sites/${id}`);
+  return { ok: true };
+}
+
 /* ------------------------------ ads / referrals ------------------------ */
 
+export type AdNetwork = "int" | "reward";
+
 /**
- * Optional, opt-in rewarded ad view. Ads never gate any app feature and the
- * reward is intentionally small; every other earning path works without ads.
+ * Rewarded ad view from an ad network block. Each network has its own daily
+ * cap and reward. A view also advances the viewer's own referral milestones.
  */
-export async function recordAdView(user: UserDoc, cfg: Cfg) {
+export async function recordAdView(user: UserDoc, cfg: Cfg, network: AdNetwork) {
   assertActive(user);
   const today = utcDayKey();
-  const seenToday = user.adsDayKey === today ? (user.adsToday ?? 0) : 0;
-  if (seenToday >= cfg.adsDailyCap)
-    throw new Error(`📺 Daily ad limit reached (${cfg.adsDailyCap}). Come back after 00:00 UTC.`);
-  const adsToday = seenToday + 1;
-  await setDoc(`users/${user.id}`, {
+  const isInt = network === "int";
+  const cap = isInt ? cfg.intAdsDailyCap : cfg.rewardAdsDailyCap;
+  const reward = Math.max(0, isInt ? cfg.intAdReward : cfg.rewardAdReward);
+  const dayKey = isInt ? user.intAdsDayKey : user.rewardAdsDayKey;
+  const seenToday = dayKey === today ? (isInt ? user.intAdsToday : user.rewardAdsToday) || 0 : 0;
+  if (seenToday >= cap)
+    throw new Error(
+      `📺 Daily limit reached for this ad block (${cap}). Come back after 00:00 UTC.`
+    );
+
+  const adsTodayTotal = user.adsDayKey === today ? (user.adsToday ?? 0) : 0;
+  const patch: Record<string, unknown> = {
     adsDayKey: today,
-    adsToday,
+    adsToday: adsTodayTotal + 1,
     adsTotal: (user.adsTotal ?? 0) + 1,
-  });
+  };
+  if (isInt) {
+    patch["intAdsDayKey"] = today;
+    patch["intAdsToday"] = seenToday + 1;
+  } else {
+    patch["rewardAdsDayKey"] = today;
+    patch["rewardAdsToday"] = seenToday + 1;
+  }
+  await setDoc(`users/${user.id}`, patch);
   user.adsDayKey = today;
-  user.adsToday = adsToday;
+  user.adsToday = adsTodayTotal + 1;
   user.adsTotal = (user.adsTotal ?? 0) + 1;
-  const reward = Math.max(0, cfg.adReward);
-  if (reward > 0) await credit(user, reward, "ad", "Rewarded ad view");
-  return { adsToday, adsTotal: user.adsTotal, reward, balance: user.balance };
+  if (isInt) {
+    user.intAdsDayKey = today;
+    user.intAdsToday = seenToday + 1;
+  } else {
+    user.rewardAdsDayKey = today;
+    user.rewardAdsToday = seenToday + 1;
+  }
+
+  if (reward > 0) await credit(user, reward, "ad", `${isInt ? "Interstitial" : "Rewarded"} ad view`);
+  await advanceReferral(user, cfg);
+  return {
+    network,
+    adsToday: seenToday + 1,
+    cap,
+    totalToday: user.adsToday,
+    adsTotal: user.adsTotal,
+    reward,
+    balance: user.balance,
+  };
 }
 
 /**
- * Referral milestones are driven by genuine daily activity (daily check-in),
- * never by ad views, so nothing pushes a user toward watching advertising.
+ * Referral milestones are driven by the invited friend's ad views:
+ * day 1 → cfg.day1Ads views, day 2 → cfg.day2Ads views. Each stage pings the
+ * referrer through the bot.
  */
 export async function advanceReferral(user: UserDoc, cfg: Cfg) {
   const ref = await getDoc<{
@@ -609,6 +736,93 @@ export function withdrawQuote(tokens: number, cfg: Cfg) {
   return { gross, fee, net: Math.max(0, gross - fee) };
 }
 
+export type WithdrawEligibility = {
+  ok: boolean;
+  adsToday: number;
+  adsRequired: number;
+  validRefs: number;
+  refsRequired: number;
+  mainTasksDone: number;
+  mainTasksTotal: number;
+  hasPending: boolean;
+  nextWithdrawAt: number;
+  checks: { key: string; label: string; ok: boolean }[];
+};
+
+/** All gates a user must pass before a withdrawal request is accepted. */
+export async function withdrawEligibility(user: UserDoc, cfg: Cfg): Promise<WithdrawEligibility> {
+  const today = utcDayKey();
+  const adsToday = user.adsDayKey === today ? (user.adsToday ?? 0) : 0;
+
+  const refs = await queryDocs<{ fake: boolean }>("referrals", {
+    where: [{ field: "referrer", op: "EQUAL", value: user.id }],
+    limit: 200,
+  });
+  const validRefs = refs.filter((r) => !r.fake).length;
+
+  const tasks = (await listTasks()).filter((t) => t.group !== "partner");
+  const claims = await queryDocs<{ taskId: string }>("taskClaims", {
+    where: [{ field: "userId", op: "EQUAL", value: user.id }],
+    limit: 500,
+  });
+  const done = new Set(claims.map((c) => c.taskId));
+  const mainTasksDone = tasks.filter((t) => done.has(t.id)).length;
+
+  const pending = await queryDocs("withdrawals", {
+    where: [
+      { field: "userId", op: "EQUAL", value: user.id },
+      { field: "status", op: "EQUAL", value: "pending" },
+    ],
+    limit: 5,
+  });
+
+  const cooldownMs = Math.max(0, cfg.withdrawCooldownHours) * 3600 * 1000;
+  const nextWithdrawAt = (user.lastWithdrawAt ?? 0) + cooldownMs;
+  const cooldownOk = Date.now() >= nextWithdrawAt;
+
+  const checks = [
+    {
+      key: "ads",
+      label: `Watch ${cfg.withdrawAdsRequired} ads today (${adsToday}/${cfg.withdrawAdsRequired})`,
+      ok: adsToday >= cfg.withdrawAdsRequired,
+    },
+    {
+      key: "refs",
+      label: `${cfg.withdrawMinRefs} valid referrals (${validRefs}/${cfg.withdrawMinRefs})`,
+      ok: validRefs >= cfg.withdrawMinRefs,
+    },
+    {
+      key: "tasks",
+      label: `All main tasks done (${mainTasksDone}/${tasks.length})`,
+      ok: tasks.length === 0 || mainTasksDone >= tasks.length,
+    },
+    {
+      key: "pending",
+      label: "No pending withdrawal",
+      ok: !pending.length,
+    },
+    {
+      key: "cooldown",
+      label: cooldownOk
+        ? "Withdrawal cooldown passed"
+        : `Next withdrawal ${new Date(nextWithdrawAt).toISOString().slice(5, 16).replace("T", " ")} UTC`,
+      ok: cooldownOk,
+    },
+  ];
+  return {
+    ok: checks.every((c) => c.ok),
+    adsToday,
+    adsRequired: cfg.withdrawAdsRequired,
+    validRefs,
+    refsRequired: cfg.withdrawMinRefs,
+    mainTasksDone,
+    mainTasksTotal: tasks.length,
+    hasPending: pending.length > 0,
+    nextWithdrawAt,
+    checks,
+  };
+}
+
 export async function requestWithdraw(user: UserDoc, cfg: Cfg, tokens: number) {
   assertActive(user);
   const amount = Math.floor(tokens);
@@ -617,21 +831,20 @@ export async function requestWithdraw(user: UserDoc, cfg: Cfg, tokens: number) {
   if (!Number.isFinite(amount) || amount < min)
     throw new Error(`⚠️ Minimum withdrawal is ${min} ${APP.tokenName}.`);
   if (amount > user.balance) throw new Error("⚠️ Insufficient balance.");
-  const pending = await queryDocs("withdrawals", {
-    where: [
-      { field: "userId", op: "EQUAL", value: user.id },
-      { field: "status", op: "EQUAL", value: "pending" },
-    ],
-    limit: 5,
-  });
-  if (pending.length) throw new Error("⏳ You already have a pending withdrawal.");
+
+  const elig = await withdrawEligibility(user, cfg);
+  if (!elig.ok) {
+    const missing = elig.checks.filter((c) => !c.ok).map((c) => c.label);
+    throw new Error(`⚠️ Withdrawal requirements not met:\n• ${missing.join("\n• ")}`);
+  }
 
   const q = withdrawQuote(amount, cfg);
   const number = (user.withdrawCount ?? 0) + 1;
   const id = `${user.id}_${Date.now()}`;
   await credit(user, -amount, "withdraw_hold", `Withdrawal #${number} requested`);
-  await setDoc(`users/${user.id}`, { withdrawCount: number });
+  await setDoc(`users/${user.id}`, { withdrawCount: number, lastWithdrawAt: Date.now() });
   user.withdrawCount = number;
+  user.lastWithdrawAt = Date.now();
   await setDoc(`withdrawals/${id}`, {
     userId: user.id,
     name: label(user),
@@ -738,13 +951,14 @@ export async function leaderboard() {
 /* --------------------------------- admin -------------------------------- */
 
 export async function adminOverview() {
-  const [users, withdrawals, tasks, codes] = await Promise.all([
+  const [users, withdrawals, tasks, codes, sites] = await Promise.all([
     queryDocs<UserDoc>("users", { limit: 1000 }),
     queryDocs<WithdrawRow>("withdrawals", { limit: 300 }),
     listTasks(),
     queryDocs<{ reward: number; uses: number; maxUses: number; active: boolean }>("codes", {
       limit: 100,
     }),
+    listSites(),
   ]);
   const today = utcDayKey();
   return {
@@ -775,6 +989,7 @@ export async function adminOverview() {
     withdrawals: withdrawals.sort((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(0, 100),
     tasks,
     codes,
+    sites,
   };
 }
 
@@ -841,12 +1056,17 @@ export async function decideWithdraw(
     `🧾 Withdraw fee: <b>$${w.feeUsd.toFixed(4)}</b>\n` +
     `💵 Net: <b>$${w.netUsd.toFixed(4)}</b>\n` +
     `🚦 Status: <b>success</b>`;
-  await sendMessage(APP.paymentChatId, post, [
+  const posted = await sendMessage(APP.paymentChatId, post, [
     [{ text: "🔎 View Transaction", url: txUrl }],
     [btn.miniApp],
   ]);
+  if (!posted) {
+    await notifyAdmin(
+      `⚠️ <b>Payment channel post failed</b>\n\nWithdrawal #${w.number} for ${w.name} was approved, but the bot could not post to <code>${APP.paymentChatId}</code>.\n\n✅ Fix: add @${APP.botUsername} to the payment channel as an <b>admin with post permission</b>, then approve again or re-post manually.`
+    );
+  }
   void origin;
-  return { ok: true };
+  return { ok: true, channelPosted: !!posted };
 }
 
 export async function adminSetUser(

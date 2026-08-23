@@ -33,6 +33,12 @@ import {
   isAdmin,
   getCfg,
   payoutProofs,
+  withdrawEligibility,
+  listSites,
+  siteStatus,
+  claimSite,
+  adminSaveSite,
+  adminDeleteSite,
 } from "./core.server";
 import { verifyInitData } from "./bot.server";
 
@@ -64,6 +70,16 @@ export const bootstrap = createServerFn({ method: "POST" })
         day2Ads: cfg.day2Ads,
         adReward: cfg.adReward,
         adsDailyCap: cfg.adsDailyCap,
+        adsgramIntBlockId: cfg.adsgramIntBlockId,
+        adsgramRewardBlockId: cfg.adsgramRewardBlockId,
+        intAdReward: cfg.intAdReward,
+        intAdsDailyCap: cfg.intAdsDailyCap,
+        rewardAdReward: cfg.rewardAdReward,
+        rewardAdsDailyCap: cfg.rewardAdsDailyCap,
+        withdrawAdsRequired: cfg.withdrawAdsRequired,
+        withdrawMinRefs: cfg.withdrawMinRefs,
+        withdrawCooldownHours: cfg.withdrawCooldownHours,
+        withdrawAdsToWatch: cfg.withdrawAdsToWatch,
         minWithdrawFirst: cfg.minWithdrawFirst,
         minWithdrawNext: cfg.minWithdrawNext,
         feeFlatUsd: cfg.feeFlatUsd,
@@ -191,10 +207,11 @@ export const doClaimDailyTask = createServerFn({ method: "POST" })
   });
 
 export const doRecordAd = createServerFn({ method: "POST" })
-  .inputValidator((d: Auth) => d)
+  .inputValidator((d: Auth & { network: "int" | "reward" }) => d)
   .handler(async ({ data }) => {
     const { user, cfg } = await session(data.initData);
-    return recordAdView(user, cfg);
+    const network = data.network === "reward" ? "reward" : "int";
+    return recordAdView(user, cfg, network);
   });
 
 export const getReferrals = createServerFn({ method: "POST" })
@@ -234,9 +251,40 @@ export const getFinance = createServerFn({ method: "POST" })
   .inputValidator((d: Auth) => d)
   .handler(async ({ data }) => {
     const { user, cfg } = await session(data.initData);
-    const [tx, wd] = await Promise.all([listTransactions(user), listWithdrawals(user.id)]);
+    const [tx, wd, eligibility] = await Promise.all([
+      listTransactions(user),
+      listWithdrawals(user.id),
+      withdrawEligibility(user, cfg),
+    ]);
     const quote = withdrawQuote(user.balance, cfg);
-    return { transactions: tx, withdrawals: wd, quote, wallet: user.wallet ?? "" };
+    return {
+      transactions: tx,
+      withdrawals: wd,
+      quote,
+      wallet: user.wallet ?? "",
+      eligibility,
+      rules: {
+        adsRequired: cfg.withdrawAdsRequired,
+        minRefs: cfg.withdrawMinRefs,
+        cooldownHours: cfg.withdrawCooldownHours,
+        adsToWatch: cfg.withdrawAdsToWatch,
+      },
+    };
+  });
+
+export const getSites = createServerFn({ method: "POST" })
+  .inputValidator((d: Auth) => d)
+  .handler(async ({ data }) => {
+    const { user } = await session(data.initData);
+    const [sites, status] = await Promise.all([listSites(), siteStatus(user)]);
+    return { sites, status };
+  });
+
+export const doClaimSite = createServerFn({ method: "POST" })
+  .inputValidator((d: Auth & { siteId: string; openedAt: number }) => d)
+  .handler(async ({ data }) => {
+    const { user } = await session(data.initData);
+    return claimSite(user, String(data.siteId ?? ""), Number(data.openedAt ?? 0));
   });
 
 export const getLeaderboard = createServerFn({ method: "POST" })
@@ -341,3 +389,23 @@ export const adminSendBroadcast = createServerFn({ method: "POST" })
 
 /** Unauthenticated: powers the public /payouts proof page and the in-app card. */
 export const getPayoutProofs = createServerFn({ method: "GET" }).handler(async () => payoutProofs());
+
+export const adminSiteSave = createServerFn({ method: "POST" })
+  .inputValidator(
+    (
+      d: AdminAuth & {
+        site: { id?: string; title?: string; url?: string; reward?: number; active?: boolean };
+      }
+    ) => d
+  )
+  .handler(async ({ data }) => {
+    await adminSession(data.initData, data.password);
+    return adminSaveSite(data.site);
+  });
+
+export const adminSiteDelete = createServerFn({ method: "POST" })
+  .inputValidator((d: AdminAuth & { id: string }) => d)
+  .handler(async ({ data }) => {
+    await adminSession(data.initData, data.password);
+    return adminDeleteSite(data.id);
+  });
