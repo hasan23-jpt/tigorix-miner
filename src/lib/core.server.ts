@@ -480,33 +480,67 @@ export async function claimTask(user: UserDoc, taskId: string, openedAt: number)
 
 /* ------------------------------ ads / referrals ------------------------ */
 
+export type AdNetwork = "int" | "reward";
+
 /**
- * Optional, opt-in rewarded ad view. Ads never gate any app feature and the
- * reward is intentionally small; every other earning path works without ads.
+ * Rewarded ad view from an ad network block. Each network has its own daily
+ * cap and reward. A view also advances the viewer's own referral milestones.
  */
-export async function recordAdView(user: UserDoc, cfg: Cfg) {
+export async function recordAdView(user: UserDoc, cfg: Cfg, network: AdNetwork) {
   assertActive(user);
   const today = utcDayKey();
-  const seenToday = user.adsDayKey === today ? (user.adsToday ?? 0) : 0;
-  if (seenToday >= cfg.adsDailyCap)
-    throw new Error(`📺 Daily ad limit reached (${cfg.adsDailyCap}). Come back after 00:00 UTC.`);
-  const adsToday = seenToday + 1;
-  await setDoc(`users/${user.id}`, {
+  const isInt = network === "int";
+  const cap = isInt ? cfg.intAdsDailyCap : cfg.rewardAdsDailyCap;
+  const reward = Math.max(0, isInt ? cfg.intAdReward : cfg.rewardAdReward);
+  const dayKey = isInt ? user.intAdsDayKey : user.rewardAdsDayKey;
+  const seenToday = dayKey === today ? (isInt ? user.intAdsToday : user.rewardAdsToday) || 0 : 0;
+  if (seenToday >= cap)
+    throw new Error(
+      `📺 Daily limit reached for this ad block (${cap}). Come back after 00:00 UTC.`
+    );
+
+  const adsTodayTotal = user.adsDayKey === today ? (user.adsToday ?? 0) : 0;
+  const patch: Record<string, unknown> = {
     adsDayKey: today,
-    adsToday,
+    adsToday: adsTodayTotal + 1,
     adsTotal: (user.adsTotal ?? 0) + 1,
-  });
+  };
+  if (isInt) {
+    patch["intAdsDayKey"] = today;
+    patch["intAdsToday"] = seenToday + 1;
+  } else {
+    patch["rewardAdsDayKey"] = today;
+    patch["rewardAdsToday"] = seenToday + 1;
+  }
+  await setDoc(`users/${user.id}`, patch);
   user.adsDayKey = today;
-  user.adsToday = adsToday;
+  user.adsToday = adsTodayTotal + 1;
   user.adsTotal = (user.adsTotal ?? 0) + 1;
-  const reward = Math.max(0, cfg.adReward);
-  if (reward > 0) await credit(user, reward, "ad", "Rewarded ad view");
-  return { adsToday, adsTotal: user.adsTotal, reward, balance: user.balance };
+  if (isInt) {
+    user.intAdsDayKey = today;
+    user.intAdsToday = seenToday + 1;
+  } else {
+    user.rewardAdsDayKey = today;
+    user.rewardAdsToday = seenToday + 1;
+  }
+
+  if (reward > 0) await credit(user, reward, "ad", `${isInt ? "Interstitial" : "Rewarded"} ad view`);
+  await advanceReferral(user, cfg);
+  return {
+    network,
+    adsToday: seenToday + 1,
+    cap,
+    totalToday: user.adsToday,
+    adsTotal: user.adsTotal,
+    reward,
+    balance: user.balance,
+  };
 }
 
 /**
- * Referral milestones are driven by genuine daily activity (daily check-in),
- * never by ad views, so nothing pushes a user toward watching advertising.
+ * Referral milestones are driven by the invited friend's ad views:
+ * day 1 → cfg.day1Ads views, day 2 → cfg.day2Ads views. Each stage pings the
+ * referrer through the bot.
  */
 export async function advanceReferral(user: UserDoc, cfg: Cfg) {
   const ref = await getDoc<{
