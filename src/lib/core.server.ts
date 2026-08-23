@@ -951,13 +951,14 @@ export async function leaderboard() {
 /* --------------------------------- admin -------------------------------- */
 
 export async function adminOverview() {
-  const [users, withdrawals, tasks, codes] = await Promise.all([
+  const [users, withdrawals, tasks, codes, sites] = await Promise.all([
     queryDocs<UserDoc>("users", { limit: 1000 }),
     queryDocs<WithdrawRow>("withdrawals", { limit: 300 }),
     listTasks(),
     queryDocs<{ reward: number; uses: number; maxUses: number; active: boolean }>("codes", {
       limit: 100,
     }),
+    listSites(),
   ]);
   const today = utcDayKey();
   return {
