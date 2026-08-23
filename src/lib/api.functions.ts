@@ -389,3 +389,23 @@ export const adminSendBroadcast = createServerFn({ method: "POST" })
 
 /** Unauthenticated: powers the public /payouts proof page and the in-app card. */
 export const getPayoutProofs = createServerFn({ method: "GET" }).handler(async () => payoutProofs());
+
+export const adminSiteSave = createServerFn({ method: "POST" })
+  .inputValidator(
+    (
+      d: AdminAuth & {
+        site: { id?: string; title?: string; url?: string; reward?: number; active?: boolean };
+      }
+    ) => d
+  )
+  .handler(async ({ data }) => {
+    await adminSession(data.initData, data.password);
+    return adminSaveSite(data.site);
+  });
+
+export const adminSiteDelete = createServerFn({ method: "POST" })
+  .inputValidator((d: AdminAuth & { id: string }) => d)
+  .handler(async ({ data }) => {
+    await adminSession(data.initData, data.password);
+    return adminDeleteSite(data.id);
+  });
