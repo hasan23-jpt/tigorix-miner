@@ -382,7 +382,6 @@ export async function claimDaily(user: UserDoc) {
   user.dailyStreak = day >= 7 ? 0 : day;
   user.dailyLast = utcDayKey();
   await credit(user, reward, "daily", `Daily reward day ${day}`);
-  await advanceReferral(user, await getCfg());
   return { reward, day, balance: user.balance };
 }
 
