@@ -989,6 +989,7 @@ export async function adminOverview() {
     withdrawals: withdrawals.sort((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(0, 100),
     tasks,
     codes,
+    sites,
   };
 }
 
