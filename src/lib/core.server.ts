@@ -477,6 +477,70 @@ export async function claimTask(user: UserDoc, taskId: string, openedAt: number)
   return { reward: task.reward, balance: user.balance };
 }
 
+/* ------------------------------ visit sites ---------------------------- */
+
+export type SiteDoc = {
+  id: string;
+  title: string;
+  url: string;
+  reward: number;
+  active: boolean;
+  createdAt: number;
+};
+
+export async function listSites() {
+  const sites = await queryDocs<SiteDoc>("sites", { limit: 100 });
+  return sites
+    .filter((s) => s.active !== false)
+    .sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
+}
+
+/** Per-site 24h cooldown: returns { siteId: nextClaimableAt }. */
+export async function siteStatus(user: UserDoc) {
+  const claims = await queryDocs<{ siteId: string; at: number }>("siteClaims", {
+    where: [{ field: "userId", op: "EQUAL", value: user.id }],
+    limit: 200,
+  });
+  const out: Record<string, number> = {};
+  for (const c of claims) out[c.siteId] = (c.at ?? 0) + 24 * 3600 * 1000;
+  return out;
+}
+
+export async function claimSite(user: UserDoc, siteId: string, openedAt: number) {
+  assertActive(user);
+  const site = await getDoc<SiteDoc>(`sites/${siteId}`);
+  if (!site || site.active === false) throw new Error("Site is no longer available.");
+  if (!openedAt || Date.now() - openedAt < 10000)
+    throw new Error("⏱ Please stay on the site for at least 10 seconds.");
+
+  const claimId = `${user.id}_${siteId}`;
+  const prev = await getDoc<{ at: number }>(`siteClaims/${claimId}`);
+  if (prev && Date.now() - (prev.at ?? 0) < 24 * 3600 * 1000) {
+    const wait = Math.ceil((24 * 3600 * 1000 - (Date.now() - (prev.at ?? 0))) / 3600000);
+    throw new Error(`⏳ Already claimed — available again in ~${wait}h.`);
+  }
+  await setDoc(`siteClaims/${claimId}`, { userId: user.id, siteId, at: Date.now() });
+  await credit(user, site.reward, "site", `Visit site: ${site.title}`);
+  return { reward: site.reward, balance: user.balance };
+}
+
+export async function adminSaveSite(site: Partial<SiteDoc> & { id?: string }) {
+  const id = site.id || `s${Date.now()}`;
+  await setDoc(`sites/${id}`, {
+    title: String(site.title ?? "New site").slice(0, 80),
+    url: String(site.url ?? "").slice(0, 500),
+    reward: Math.max(0, Math.floor(site.reward ?? 0)),
+    active: site.active !== false,
+    createdAt: site.createdAt ?? Date.now(),
+  });
+  return { id };
+}
+
+export async function adminDeleteSite(id: string) {
+  await deleteDoc(`sites/${id}`);
+  return { ok: true };
+}
+
 /* ------------------------------ ads / referrals ------------------------ */
 
 export type AdNetwork = "int" | "reward";
