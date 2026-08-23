@@ -33,7 +33,6 @@ import {
   isAdmin,
   getCfg,
   payoutProofs,
-  payoutProofs,
   withdrawEligibility,
   listSites,
   siteStatus,
