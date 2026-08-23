@@ -16,6 +16,16 @@ export type Cfg = {
   day2Ads: number;
   adReward: number;
   adsDailyCap: number;
+  adsgramIntBlockId: string;
+  adsgramRewardBlockId: string;
+  intAdReward: number;
+  intAdsDailyCap: number;
+  rewardAdReward: number;
+  rewardAdsDailyCap: number;
+  withdrawAdsRequired: number;
+  withdrawMinRefs: number;
+  withdrawCooldownHours: number;
+  withdrawAdsToWatch: number;
   minWithdrawFirst: number;
   minWithdrawNext: number;
   feeFlatUsd: number;
@@ -33,10 +43,20 @@ const DEFAULT_CFG: Cfg = {
   refJoin: 250,
   refDay1: 500,
   refDay2: 750,
-  day1Ads: 1,
-  day2Ads: 1,
+  day1Ads: 10,
+  day2Ads: 15,
   adReward: 2,
   adsDailyCap: 20,
+  adsgramIntBlockId: "",
+  adsgramRewardBlockId: "",
+  intAdReward: 50,
+  intAdsDailyCap: 10,
+  rewardAdReward: 5,
+  rewardAdsDailyCap: 10,
+  withdrawAdsRequired: 20,
+  withdrawMinRefs: 2,
+  withdrawCooldownHours: 12,
+  withdrawAdsToWatch: 3,
   minWithdrawFirst: 10000,
   minWithdrawNext: 20000,
   feeFlatUsd: 0.01,
