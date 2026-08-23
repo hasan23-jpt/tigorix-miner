@@ -99,6 +99,11 @@ export type UserDoc = {
   adsTotal: number;
   adsDayKey: string;
   adsToday: number;
+  intAdsToday: number;
+  intAdsDayKey: string;
+  rewardAdsToday: number;
+  rewardAdsDayKey: string;
+  lastWithdrawAt: number;
   wallet: string;
   withdrawCount: number;
   totalPaidUsd: number;
