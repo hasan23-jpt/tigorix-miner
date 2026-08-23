@@ -991,12 +991,17 @@ export async function decideWithdraw(
     `🧾 Withdraw fee: <b>$${w.feeUsd.toFixed(4)}</b>\n` +
     `💵 Net: <b>$${w.netUsd.toFixed(4)}</b>\n` +
     `🚦 Status: <b>success</b>`;
-  await sendMessage(APP.paymentChatId, post, [
+  const posted = await sendMessage(APP.paymentChatId, post, [
     [{ text: "🔎 View Transaction", url: txUrl }],
     [btn.miniApp],
   ]);
+  if (!posted) {
+    await notifyAdmin(
+      `⚠️ <b>Payment channel post failed</b>\n\nWithdrawal #${w.number} for ${w.name} was approved, but the bot could not post to <code>${APP.paymentChatId}</code>.\n\n✅ Fix: add @${APP.botUsername} to the payment channel as an <b>admin with post permission</b>, then approve again or re-post manually.`
+    );
+  }
   void origin;
-  return { ok: true };
+  return { ok: true, channelPosted: !!posted };
 }
 
 export async function adminSetUser(
