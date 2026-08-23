@@ -251,9 +251,40 @@ export const getFinance = createServerFn({ method: "POST" })
   .inputValidator((d: Auth) => d)
   .handler(async ({ data }) => {
     const { user, cfg } = await session(data.initData);
-    const [tx, wd] = await Promise.all([listTransactions(user), listWithdrawals(user.id)]);
+    const [tx, wd, eligibility] = await Promise.all([
+      listTransactions(user),
+      listWithdrawals(user.id),
+      withdrawEligibility(user, cfg),
+    ]);
     const quote = withdrawQuote(user.balance, cfg);
-    return { transactions: tx, withdrawals: wd, quote, wallet: user.wallet ?? "" };
+    return {
+      transactions: tx,
+      withdrawals: wd,
+      quote,
+      wallet: user.wallet ?? "",
+      eligibility,
+      rules: {
+        adsRequired: cfg.withdrawAdsRequired,
+        minRefs: cfg.withdrawMinRefs,
+        cooldownHours: cfg.withdrawCooldownHours,
+        adsToWatch: cfg.withdrawAdsToWatch,
+      },
+    };
+  });
+
+export const getSites = createServerFn({ method: "POST" })
+  .inputValidator((d: Auth) => d)
+  .handler(async ({ data }) => {
+    const { user } = await session(data.initData);
+    const [sites, status] = await Promise.all([listSites(), siteStatus(user)]);
+    return { sites, status };
+  });
+
+export const doClaimSite = createServerFn({ method: "POST" })
+  .inputValidator((d: Auth & { siteId: string; openedAt: number }) => d)
+  .handler(async ({ data }) => {
+    const { user } = await session(data.initData);
+    return claimSite(user, String(data.siteId ?? ""), Number(data.openedAt ?? 0));
   });
 
 export const getLeaderboard = createServerFn({ method: "POST" })
