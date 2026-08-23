@@ -191,10 +191,11 @@ export const doClaimDailyTask = createServerFn({ method: "POST" })
   });
 
 export const doRecordAd = createServerFn({ method: "POST" })
-  .inputValidator((d: Auth) => d)
+  .inputValidator((d: Auth & { network: "int" | "reward" }) => d)
   .handler(async ({ data }) => {
     const { user, cfg } = await session(data.initData);
-    return recordAdView(user, cfg);
+    const network = data.network === "reward" ? "reward" : "int";
+    return recordAdView(user, cfg, network);
   });
 
 export const getReferrals = createServerFn({ method: "POST" })
