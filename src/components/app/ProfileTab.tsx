@@ -217,7 +217,7 @@ function WalletView() {
           First withdrawal minimum {fmt(cfg.minWithdrawFirst)} {APP.tokenName}, then{" "}
           {fmt(cfg.minWithdrawNext)} {APP.tokenName}.
         </Guide>
-        <WithdrawGate data={data} tokens={tokens} busy={busy} onSubmit={() =>
+        <WithdrawGate data={data} tokens={tokens} min={min} busy={busy} onSubmit={() =>
           void run(
             () => doWithdraw({ data: { initData: auth, tokens } }),
             () => "💸 Withdrawal requested — admin will review it soon!"
@@ -382,17 +382,18 @@ function AboutView() {
 function WithdrawGate({
   data,
   tokens,
+  min,
   busy,
   onSubmit,
   children,
 }: {
   data: Awaited<ReturnType<typeof getFinance>> | undefined;
   tokens: number;
+  min: number;
   busy: boolean;
   onSubmit: () => void;
   children: React.ReactNode;
 }) {
-  const { boot } = useAppState();
   const { gateWithRewardAds, watchingAd } = useAdGate();
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -407,7 +408,7 @@ function WithdrawGate({
 
   const rows: { ok: boolean; label: string }[] = [];
   rows.push({ ok: !!data?.wallet, label: "💳 Wallet address set" });
-  rows.push({ ok: tokens >= (e ? boot.cfg.minWithdrawFirst : 0) && tokens >= minTokens(e, boot.cfg), label: `\ud83e\ude99 Minimum ${fmt(minTokens(e, boot.cfg))} ${APP.tokenName}` });
+  rows.push({ ok: tokens >= min, label: `\ud83e\ude99 Minimum ${fmt(min)} ${APP.tokenName}` });
   if (e) rows.push(...e.checks.map((c) => ({ ok: c.ok, label: c.label })));
 
   const allOk = !!e && rows.every((r) => r.ok);
@@ -452,13 +453,4 @@ function WithdrawGate({
       </GoldButton>
     </div>
   );
-}
-
-function minTokens(
-  _e: unknown,
-  cfg: { minWithdrawFirst: number; minWithdrawNext: number }
-) {
-  return Math.min(cfg.minWithdrawFirst, cfg.minWithdrawNext) === cfg.minWithdrawFirst
-    ? cfg.minWithdrawFirst
-    : cfg.minWithdrawNext;
 }
