@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -216,7 +216,12 @@ function WalletView() {
           First withdrawal minimum {fmt(cfg.minWithdrawFirst)} {APP.tokenName}, then{" "}
           {fmt(cfg.minWithdrawNext)} {APP.tokenName}.
         </Guide>
-        <div className="space-y-2">
+        <WithdrawGate data={data} tokens={tokens} busy={busy} onSubmit={() =>
+          void run(
+            () => doWithdraw({ data: { initData: auth, tokens } }),
+            () => "💸 Withdrawal requested — admin will review it soon!"
+          ).then(() => setAmount(""))
+        }>
           <Field
             label={`Amount in ${APP.tokenName}`}
             inputMode="numeric"
@@ -238,18 +243,7 @@ function WalletView() {
               <span className="text-success">${Math.max(0, gross - fee).toFixed(4)}</span>
             </div>
           </div>
-          <GoldButton
-            disabled={busy || tokens < min}
-            onClick={() =>
-              void run(
-                () => doWithdraw({ data: { initData: auth, tokens } }),
-                () => "💸 Withdrawal requested — admin will review it soon!"
-              ).then(() => setAmount(""))
-            }
-          >
-            🚀 Request Withdrawal
-          </GoldButton>
-        </div>
+        </WithdrawGate>
       </Card>
 
       <div className="grid grid-cols-2 gap-3">
