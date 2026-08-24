@@ -65,7 +65,7 @@ export function useAdGate() {
     if (!ids.length) return true;
     setWatchingAd(1);
     try {
-      return await showAdsgramAd(ids[Math.floor(Math.random() * ids.length)]);
+      return await showAdsgramAd(ids[Math.floor(Math.random() * ids.length)]!);
     } finally {
       setWatchingAd(0);
     }
