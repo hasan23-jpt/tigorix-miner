@@ -9,6 +9,7 @@ import {
   doStartMining,
 } from "@/lib/api.functions";
 import { useAppState } from "./useApp";
+import { useAdGate } from "./useAdGate";
 import { Card, Field, GhostButton, GoldButton, Guide, Pill, SectionTitle } from "./ui";
 
 function countdown(ms: number) {
@@ -21,6 +22,7 @@ function countdown(ms: number) {
 
 export function HomeTab({ onNavigate }: { onNavigate: (tab: string) => void }) {
   const { state, auth, run, busy, refresh } = useAppState();
+  const { gateWithInterstitial, watchingAd } = useAdGate();
   const { user, mining, daily } = state;
   const [now, setNow] = useState(Date.now());
   const [code, setCode] = useState("");
