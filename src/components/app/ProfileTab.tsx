@@ -408,7 +408,7 @@ function WithdrawGate({
 
   const rows: { ok: boolean; label: string }[] = [];
   rows.push({ ok: !!data?.wallet, label: "💳 Wallet address set" });
-  rows.push({ ok: tokens >= min, label: `\ud83e\ude99 Minimum ${fmt(min)} ${APP.tokenName}` });
+  rows.push({ ok: tokens >= min, label: `🪙 Minimum ${fmt(min)} ${APP.tokenName}` });
   if (e) rows.push(...e.checks.map((c) => ({ ok: c.ok, label: c.label })));
 
   const allOk = !!e && rows.every((r) => r.ok);
@@ -419,18 +419,18 @@ function WithdrawGate({
       {rows.length > 1 && (
         <div className="rounded-xl border border-border bg-background/40 p-3">
           <p className="mb-2 text-[11px] font-extrabold uppercase tracking-wide text-muted-foreground">
-            \ud83d\udccb Withdrawal requirements
+            📋 Withdrawal requirements
           </p>
           <ul className="space-y-1.5 text-[11px]">
             {rows.map((r, i) => (
               <li key={i} className={r.ok ? "text-success" : "text-muted-foreground"}>
-                {r.ok ? "\u2705" : "\u2b1c"} {r.label}
+                {r.ok ? "✅" : "⬜"} {r.label}
               </li>
             ))}
           </ul>
           {cooldownLeft > 0 && (
             <p className="mt-2 text-[11px] font-bold text-warn">
-              \ud83d\udd50 Next withdrawal in {Math.floor(cooldownLeft / 3600000)}h{" "}
+              🕐 Next withdrawal in {Math.floor(cooldownLeft / 3600000)}h{" "}
               {Math.floor((cooldownLeft % 3600000) / 60000)}m {Math.floor((cooldownLeft % 60000) / 1000)}s
             </p>
           )}
@@ -446,10 +446,10 @@ function WithdrawGate({
         onClick={() => void gateWithRewardAds(adsToWatch, onSubmit)}
       >
         {watchingAd > 0
-          ? `\ud83d\udcfa Watch ads\u2026 ${adsToWatch - watchingAd + 1}/${adsToWatch}`
+          ? `📺 Watch ads… ${adsToWatch - watchingAd + 1}/${adsToWatch}`
           : allOk
-            ? `\ud83d\ude80 Watch ${adsToWatch} ads & Request Withdrawal`
-            : "\ud83d\udd12 Complete requirements to withdraw"}
+            ? `🚀 Watch ${adsToWatch} ads & Request Withdrawal`
+            : "🔒 Complete requirements to withdraw"}
       </GoldButton>
     </div>
   );
