@@ -386,32 +386,13 @@ function WithdrawGate({
   onSubmit,
   children,
 }: {
-  data:
-    | {
-        eligibility?: {
-          hasWallet: boolean;
-          meetsMin: boolean;
-          dailyAdsOk: boolean;
-          adsToday: number;
-          minRefsOk: boolean;
-          activeRefs: number;
-          tasksOk: boolean;
-          tasksDone: number;
-          tasksTotal: number;
-          noPending: boolean;
-          cooldownOk: boolean;
-          nextAt: number;
-          minWithdraw: number;
-        };
-        rules?: { adsRequired: number; minRefs: number; cooldownHours: number; adsToWatch: number };
-      }
-    | undefined;
+  data: Awaited<ReturnType<typeof getFinance>> | undefined;
   tokens: number;
   busy: boolean;
   onSubmit: () => void;
   children: React.ReactNode;
 }) {
-  const { state, boot } = useAppState();
+  const { boot } = useAppState();
   const { gateWithRewardAds, watchingAd } = useAdGate();
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -421,57 +402,37 @@ function WithdrawGate({
 
   const e = data?.eligibility;
   const rules = data?.rules;
-  const cooldownLeft = e && e.nextAt > now ? e.nextAt - now : 0;
   const adsToWatch = rules?.adsToWatch ?? 3;
-  const min = e?.minWithdraw ?? boot.cfg.minWithdrawNext;
+  const cooldownLeft = e && e.nextWithdrawAt > now ? e.nextWithdrawAt - now : 0;
 
-  const rows: { ok: boolean; label: string }[] = e
-    ? [
-        { ok: e.hasWallet, label: "💳 Wallet address set" },
-        {
-          ok: tokens >= min,
-          label: `🪙 Minimum ${fmt(min)} ${APP.tokenName}`,
-        },
-        {
-          ok: e.dailyAdsOk,
-          label: `📺 Daily ads ${e.adsToday}/${rules?.adsRequired ?? 20}`,
-        },
-        {
-          ok: e.minRefsOk,
-          label: `👥 ${rules?.minRefs ?? 2} active referrals (${e.activeRefs}/${rules?.minRefs ?? 2}) — fakes don't count`,
-        },
-        {
-          ok: e.tasksOk,
-          label: `🎯 All main tasks (${e.tasksDone}/${e.tasksTotal})`,
-        },
-        { ok: e.noPending, label: "⏳ No pending withdrawal" },
-        {
-          ok: cooldownLeft <= 0,
-          label:
-            cooldownLeft > 0
-              ? `🕐 Next withdrawal in ${Math.floor(cooldownLeft / 3600000)}h ${Math.floor((cooldownLeft % 3600000) / 60000)}m`
-              : `🕐 ${rules?.cooldownHours ?? 12}h cooldown passed`,
-        },
-      ]
-    : [];
+  const rows: { ok: boolean; label: string }[] = [];
+  rows.push({ ok: !!data?.wallet, label: "💳 Wallet address set" });
+  rows.push({ ok: tokens >= (e ? boot.cfg.minWithdrawFirst : 0) && tokens >= minTokens(e, boot.cfg), label: `\ud83e\ude99 Minimum ${fmt(minTokens(e, boot.cfg))} ${APP.tokenName}` });
+  if (e) rows.push(...e.checks.map((c) => ({ ok: c.ok, label: c.label })));
 
-  const allOk = rows.length > 0 && rows.every((r) => r.ok);
+  const allOk = !!e && rows.every((r) => r.ok);
 
   return (
     <div className="space-y-2">
       {children}
-      {!!rows.length && (
+      {rows.length > 1 && (
         <div className="rounded-xl border border-border bg-background/40 p-3">
           <p className="mb-2 text-[11px] font-extrabold uppercase tracking-wide text-muted-foreground">
-            📋 Withdrawal requirements
+            \ud83d\udccb Withdrawal requirements
           </p>
           <ul className="space-y-1.5 text-[11px]">
             {rows.map((r, i) => (
               <li key={i} className={r.ok ? "text-success" : "text-muted-foreground"}>
-                {r.ok ? "✅" : "⬜"} {r.label}
+                {r.ok ? "\u2705" : "\u2b1c"} {r.label}
               </li>
             ))}
           </ul>
+          {cooldownLeft > 0 && (
+            <p className="mt-2 text-[11px] font-bold text-warn">
+              \ud83d\udd50 Next withdrawal in {Math.floor(cooldownLeft / 3600000)}h{" "}
+              {Math.floor((cooldownLeft % 3600000) / 60000)}m {Math.floor((cooldownLeft % 60000) / 1000)}s
+            </p>
+          )}
           {!allOk && (
             <p className="mt-2 text-[10px] text-muted-foreground">
               Complete everything above, then watch {adsToWatch} short ads to submit.
@@ -479,16 +440,25 @@ function WithdrawGate({
           )}
         </div>
       )}
-      <GoldButton disabled={busy || watchingAd > 0 || tokens < min || !allOk} onClick={() =>
-        void gateWithRewardAds(adsToWatch, onSubmit)
-      }>
+      <GoldButton
+        disabled={busy || watchingAd > 0 || !allOk}
+        onClick={() => void gateWithRewardAds(adsToWatch, onSubmit)}
+      >
         {watchingAd > 0
-          ? `📺 Watch ads… ${adsToWatch - watchingAd + 1}/${adsToWatch}`
+          ? `\ud83d\udcfa Watch ads\u2026 ${adsToWatch - watchingAd + 1}/${adsToWatch}`
           : allOk
-            ? `🚀 Watch ${adsToWatch} ads & Request Withdrawal`
-            : "🔒 Complete requirements to withdraw"}
+            ? `\ud83d\ude80 Watch ${adsToWatch} ads & Request Withdrawal`
+            : "\ud83d\udd12 Complete requirements to withdraw"}
       </GoldButton>
-      {!state.user.withdrawCount && cooldownLeft <= 0 ? null : null}
     </div>
   );
+}
+
+function minTokens(
+  _e: unknown,
+  cfg: { minWithdrawFirst: number; minWithdrawNext: number }
+) {
+  return Math.min(cfg.minWithdrawFirst, cfg.minWithdrawNext) === cfg.minWithdrawFirst
+    ? cfg.minWithdrawFirst
+    : cfg.minWithdrawNext;
 }
