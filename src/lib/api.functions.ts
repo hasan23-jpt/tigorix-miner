@@ -108,6 +108,11 @@ function publicUser(u: {
   refEarnClaimed: number;
   adsToday: number;
   adsTotal: number;
+  adsDayKey: string;
+  intAdsToday: number;
+  intAdsDayKey: string;
+  rewardAdsToday: number;
+  rewardAdsDayKey: string;
   wallet: string;
   withdrawCount: number;
   totalPaidUsd: number;
@@ -115,6 +120,7 @@ function publicUser(u: {
   notifications: boolean;
   language: string;
 }) {
+  const today = new Date().toISOString().slice(0, 10);
   return {
     id: u.id,
     username: u.username ?? "",
@@ -128,8 +134,10 @@ function publicUser(u: {
     refActive: u.refActive ?? 0,
     refEarnPending: u.refEarnPending ?? 0,
     refEarnClaimed: u.refEarnClaimed ?? 0,
-    adsToday: u.adsToday ?? 0,
+    adsToday: u.adsDayKey === today ? (u.adsToday ?? 0) : 0,
     adsTotal: u.adsTotal ?? 0,
+    intAdsToday: u.intAdsDayKey === today ? (u.intAdsToday ?? 0) : 0,
+    rewardAdsToday: u.rewardAdsDayKey === today ? (u.rewardAdsToday ?? 0) : 0,
     wallet: u.wallet ?? "",
     withdrawCount: u.withdrawCount ?? 0,
     totalPaidUsd: u.totalPaidUsd ?? 0,
