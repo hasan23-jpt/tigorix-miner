@@ -17,6 +17,7 @@ import { APP, fmt } from "@/lib/config";
 import { openLink } from "@/lib/telegram";
 import { doSetWallet, doWithdraw, getFinance, getLeaderboard } from "@/lib/api.functions";
 import { useAppState } from "./useApp";
+import { useAdGate } from "./useAdGate";
 import { Card, Field, GhostButton, GoldButton, Guide, Pill, SectionTitle, Stat } from "./ui";
 
 type View = "root" | "wallet" | "transactions" | "leaderboard" | "about";
