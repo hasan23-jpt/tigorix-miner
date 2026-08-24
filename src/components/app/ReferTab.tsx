@@ -5,10 +5,12 @@ import { APP, fmt } from "@/lib/config";
 import { openLink } from "@/lib/telegram";
 import { doClaimReferral, getReferrals } from "@/lib/api.functions";
 import { useAppState } from "./useApp";
+import { useAdGate } from "./useAdGate";
 import { Card, GhostButton, GoldButton, Guide, Pill, SectionTitle, Stat } from "./ui";
 
 export function ReferTab() {
   const { state, auth, run, busy } = useAppState();
+  const { showRandomAd, watchingAd } = useAdGate();
   const link = `${APP.miniAppLink}?startapp=${state.user.id}`;
 
   const { data } = useQuery({
