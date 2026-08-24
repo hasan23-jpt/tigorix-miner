@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -17,6 +17,7 @@ import { APP, fmt } from "@/lib/config";
 import { openLink } from "@/lib/telegram";
 import { doSetWallet, doWithdraw, getFinance, getLeaderboard } from "@/lib/api.functions";
 import { useAppState } from "./useApp";
+import { useAdGate } from "./useAdGate";
 import { Card, Field, GhostButton, GoldButton, Guide, Pill, SectionTitle, Stat } from "./ui";
 
 type View = "root" | "wallet" | "transactions" | "leaderboard" | "about";
@@ -216,7 +217,12 @@ function WalletView() {
           First withdrawal minimum {fmt(cfg.minWithdrawFirst)} {APP.tokenName}, then{" "}
           {fmt(cfg.minWithdrawNext)} {APP.tokenName}.
         </Guide>
-        <div className="space-y-2">
+        <WithdrawGate data={data} tokens={tokens} min={min} busy={busy} onSubmit={() =>
+          void run(
+            () => doWithdraw({ data: { initData: auth, tokens } }),
+            () => "💸 Withdrawal requested — admin will review it soon!"
+          ).then(() => setAmount(""))
+        }>
           <Field
             label={`Amount in ${APP.tokenName}`}
             inputMode="numeric"
@@ -238,18 +244,7 @@ function WalletView() {
               <span className="text-success">${Math.max(0, gross - fee).toFixed(4)}</span>
             </div>
           </div>
-          <GoldButton
-            disabled={busy || tokens < min}
-            onClick={() =>
-              void run(
-                () => doWithdraw({ data: { initData: auth, tokens } }),
-                () => "💸 Withdrawal requested — admin will review it soon!"
-              ).then(() => setAmount(""))
-            }
-          >
-            🚀 Request Withdrawal
-          </GoldButton>
-        </div>
+        </WithdrawGate>
       </Card>
 
       <div className="grid grid-cols-2 gap-3">
@@ -382,5 +377,80 @@ function AboutView() {
         <p>Version 1.0</p>
       </div>
     </Card>
+  );
+}
+function WithdrawGate({
+  data,
+  tokens,
+  min,
+  busy,
+  onSubmit,
+  children,
+}: {
+  data: Awaited<ReturnType<typeof getFinance>> | undefined;
+  tokens: number;
+  min: number;
+  busy: boolean;
+  onSubmit: () => void;
+  children: React.ReactNode;
+}) {
+  const { gateWithRewardAds, watchingAd } = useAdGate();
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const e = data?.eligibility;
+  const rules = data?.rules;
+  const adsToWatch = rules?.adsToWatch ?? 3;
+  const cooldownLeft = e && e.nextWithdrawAt > now ? e.nextWithdrawAt - now : 0;
+
+  const rows: { ok: boolean; label: string }[] = [];
+  rows.push({ ok: !!data?.wallet, label: "💳 Wallet address set" });
+  rows.push({ ok: tokens >= min, label: `🪙 Minimum ${fmt(min)} ${APP.tokenName}` });
+  if (e) rows.push(...e.checks.map((c) => ({ ok: c.ok, label: c.label })));
+
+  const allOk = !!e && rows.every((r) => r.ok);
+
+  return (
+    <div className="space-y-2">
+      {children}
+      {rows.length > 1 && (
+        <div className="rounded-xl border border-border bg-background/40 p-3">
+          <p className="mb-2 text-[11px] font-extrabold uppercase tracking-wide text-muted-foreground">
+            📋 Withdrawal requirements
+          </p>
+          <ul className="space-y-1.5 text-[11px]">
+            {rows.map((r, i) => (
+              <li key={i} className={r.ok ? "text-success" : "text-muted-foreground"}>
+                {r.ok ? "✅" : "⬜"} {r.label}
+              </li>
+            ))}
+          </ul>
+          {cooldownLeft > 0 && (
+            <p className="mt-2 text-[11px] font-bold text-warn">
+              🕐 Next withdrawal in {Math.floor(cooldownLeft / 3600000)}h{" "}
+              {Math.floor((cooldownLeft % 3600000) / 60000)}m {Math.floor((cooldownLeft % 60000) / 1000)}s
+            </p>
+          )}
+          {!allOk && (
+            <p className="mt-2 text-[10px] text-muted-foreground">
+              Complete everything above, then watch {adsToWatch} short ads to submit.
+            </p>
+          )}
+        </div>
+      )}
+      <GoldButton
+        disabled={busy || watchingAd > 0 || !allOk}
+        onClick={() => void gateWithRewardAds(adsToWatch, onSubmit)}
+      >
+        {watchingAd > 0
+          ? `📺 Watch ads… ${adsToWatch - watchingAd + 1}/${adsToWatch}`
+          : allOk
+            ? `🚀 Watch ${adsToWatch} ads & Request Withdrawal`
+            : "🔒 Complete requirements to withdraw"}
+      </GoldButton>
+    </div>
   );
 }

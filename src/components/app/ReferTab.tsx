@@ -5,10 +5,12 @@ import { APP, fmt } from "@/lib/config";
 import { openLink } from "@/lib/telegram";
 import { doClaimReferral, getReferrals } from "@/lib/api.functions";
 import { useAppState } from "./useApp";
+import { useAdGate } from "./useAdGate";
 import { Card, GhostButton, GoldButton, Guide, Pill, SectionTitle, Stat } from "./ui";
 
 export function ReferTab() {
   const { state, auth, run, busy } = useAppState();
+  const { showRandomAd, watchingAd } = useAdGate();
   const link = `${APP.miniAppLink}?startapp=${state.user.id}`;
 
   const { data } = useQuery({
@@ -40,15 +42,22 @@ export function ReferTab() {
           <span className="text-sm text-muted-foreground">{APP.tokenName}</span>
         </p>
         <GoldButton
-          disabled={busy || (data?.pending ?? state.user.refEarnPending) <= 0}
+          disabled={busy || watchingAd > 0 || (data?.pending ?? state.user.refEarnPending) <= 0}
           onClick={() =>
-            void run(
-              () => doClaimReferral({ data: { initData: auth } }),
-              (r) => `🎉 +${r?.reward} ${APP.tokenName} claimed!`
-            )
+            void (async () => {
+              const ok = await showRandomAd();
+              if (!ok) {
+                toast.error("📺 Watch the ad fully to claim your referral rewards.");
+                return;
+              }
+              await run(
+                () => doClaimReferral({ data: { initData: auth } }),
+                (r) => `🎉 +${r?.reward} ${APP.tokenName} claimed!`
+              );
+            })()
           }
         >
-          🎁 Claim Referral Rewards
+          {watchingAd > 0 ? "📺 Watching ad…" : "🎁 Claim Referral Rewards"}
         </GoldButton>
       </Card>
 

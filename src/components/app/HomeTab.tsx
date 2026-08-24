@@ -9,6 +9,7 @@ import {
   doStartMining,
 } from "@/lib/api.functions";
 import { useAppState } from "./useApp";
+import { useAdGate } from "./useAdGate";
 import { Card, Field, GhostButton, GoldButton, Guide, Pill, SectionTitle } from "./ui";
 
 function countdown(ms: number) {
@@ -21,6 +22,7 @@ function countdown(ms: number) {
 
 export function HomeTab({ onNavigate }: { onNavigate: (tab: string) => void }) {
   const { state, auth, run, busy, refresh } = useAppState();
+  const { gateWithInterstitial, watchingAd } = useAdGate();
   const { user, mining, daily } = state;
   const [now, setNow] = useState(Date.now());
   const [code, setCode] = useState("");
@@ -119,25 +121,33 @@ export function HomeTab({ onNavigate }: { onNavigate: (tab: string) => void }) {
 
         {mining.status === "claimable" ? (
           <GoldButton
-            disabled={busy}
+            disabled={busy || watchingAd > 0}
             onClick={() => {
               haptic("medium");
-              void run(() => doClaimMining({ data: { initData: auth } }), (r) =>
-                `🎉 Claimed ${r?.reward ?? 0} ${APP.tokenName}!`
+              void gateWithInterstitial(() =>
+                run(() => doClaimMining({ data: { initData: auth } }), (r) =>
+                  `🎉 Claimed ${r?.reward ?? 0} ${APP.tokenName}!`
+                )
               );
             }}
           >
-            🎁 Claim Mining Reward
+            {watchingAd > 0 ? "📺 Watching ad…" : "🎁 Claim Mining Reward"}
           </GoldButton>
         ) : (
           <GoldButton
-            disabled={busy || running}
+            disabled={busy || running || watchingAd > 0}
             onClick={() => {
               haptic();
-              void run(() => doStartMining({ data: { initData: auth } }), () => "⛏ Mining started!");
+              void gateWithInterstitial(() =>
+                run(() => doStartMining({ data: { initData: auth } }), () => "⛏ Mining started!")
+              );
             }}
           >
-            {running ? "⛏ Mining in progress…" : "🚀 Start Mining"}
+            {watchingAd > 0
+              ? "📺 Watching ad…"
+              : running
+                ? "⛏ Mining in progress…"
+                : "🚀 Start Mining"}
           </GoldButton>
         )}
       </Card>
@@ -162,15 +172,17 @@ export function HomeTab({ onNavigate }: { onNavigate: (tab: string) => void }) {
             onChange={(e) => setCode(e.target.value.toUpperCase())}
           />
           <GoldButton
-            disabled={busy || !code.trim()}
+            disabled={busy || !code.trim() || watchingAd > 0}
             onClick={() =>
-              void run(
-                () => doRedeemCode({ data: { initData: auth, code } }),
-                (r) => `🎉 Code redeemed: +${r?.reward ?? 0} ${APP.tokenName}`
-              ).then(() => setCode(""))
+              void gateWithInterstitial(() =>
+                run(
+                  () => doRedeemCode({ data: { initData: auth, code } }),
+                  (r) => `🎉 Code redeemed: +${r?.reward ?? 0} ${APP.tokenName}`
+                ).then(() => setCode(""))
+              )
             }
           >
-            🎟 Redeem Code
+            {watchingAd > 0 ? "📺 Watching ad…" : "🎟 Redeem Code"}
           </GoldButton>
           <GhostButton onClick={() => openLink(APP.communityChannel)}>
             📣 Get codes from Community

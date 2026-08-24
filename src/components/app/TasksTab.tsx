@@ -7,8 +7,9 @@ import { useAppState } from "./useApp";
 import { Card, GhostButton, GoldButton, Guide, Pill, SectionTitle } from "./ui";
 
 export function TasksTab() {
-  const { auth, run, busy } = useAppState();
+  const { auth } = useAppState();
   const [opened, setOpened] = useState<Record<string, number>>({});
+  const [tab, setTab] = useState<"main" | "partner" | "daily">("main");
 
   const { data, isLoading } = useQuery({
     queryKey: ["tasks"],
@@ -56,70 +57,102 @@ export function TasksTab() {
         seconds after you open the link. Daily tasks reset at 00:00 UTC.
       </Guide>
 
-      <Card>
-        <SectionTitle icon="📅" title="Daily Tasks" action={<Pill tone="warn">Resets 00:00 UTC</Pill>} />
-        <div className="space-y-3">
-          {dailyTasks.map((t) => {
-            const claimed = dailyDone.includes(t.key);
-            return (
-              <div key={t.key} className="rounded-xl border border-border bg-background/40 p-3">
-                <div className="flex items-start gap-2">
-                  <span className="text-xl">{t.emoji}</span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-bold">{t.title}</p>
-                    <p className="text-[11px] text-muted-foreground">{t.desc}</p>
-                  </div>
-                  <Pill tone="success">+{t.reward}</Pill>
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <GhostButton
-                    onClick={() =>
-                      t.url
-                        ? openLink(t.url)
-                        : openLink(
-                            `https://t.me/share/url?url=${encodeURIComponent(APP.miniAppLink)}&text=${encodeURIComponent("🐯 Join Tigorix and earn real rewards!")}`
-                          )
-                    }
-                  >
-                    {t.url ? "🔗 Open" : "📤 Share"}
-                  </GhostButton>
-                  <GoldButton
-                    disabled={busy || claimed}
-                    onClick={() =>
-                      void run(
-                        () => doClaimDailyTask({ data: { initData: auth, key: t.key } }),
-                        (r) => `🎉 +${r?.reward} ${APP.tokenName}`
-                      )
-                    }
-                  >
-                    {claimed ? "✅ Claimed" : "🎁 Claim"}
-                  </GoldButton>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </Card>
+      <div className="surface-card grid grid-cols-3 gap-2 p-1.5">
+        {(
+          [
+            { id: "main", label: "🎯 Main" },
+            { id: "partner", label: "🤝 Partner" },
+            { id: "daily", label: "📅 Daily" },
+          ] as const
+        ).map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`rounded-lg py-2.5 text-xs font-extrabold transition ${
+              tab === t.id ? "bg-gold-gradient text-primary-foreground" : "text-muted-foreground"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-      <TaskGroup
-        icon="🎯"
-        title="Main Tasks"
-        tasks={main}
-        done={done}
-        opened={opened}
-        setOpened={setOpened}
-        empty={isLoading ? "Loading tasks…" : "No main tasks right now — check back soon! 🐯"}
-      />
-      <TaskGroup
-        icon="🤝"
-        title="Partner Tasks"
-        tasks={partner}
-        done={done}
-        opened={opened}
-        setOpened={setOpened}
-        empty={isLoading ? "Loading tasks…" : "No partner tasks right now — check back soon! 🚀"}
-      />
+      {tab === "daily" ? (
+        <DailyTasks tasks={dailyTasks} done={dailyDone} />
+      ) : (
+        <TaskGroup
+          icon={tab === "main" ? "🎯" : "🤝"}
+          title={tab === "main" ? "Main Tasks" : "Partner Tasks"}
+          tasks={tab === "main" ? main : partner}
+          done={done}
+          opened={opened}
+          setOpened={setOpened}
+          empty={
+            isLoading
+              ? "Loading tasks…"
+              : tab === "main"
+                ? "No main tasks right now — check back soon! 🐯"
+                : "No partner tasks right now — check back soon! 🚀"
+          }
+        />
+      )}
     </div>
+  );
+}
+
+function DailyTasks({
+  tasks,
+  done,
+}: {
+  tasks: { key: string; emoji: string; title: string; desc: string; url: string; reward: number }[];
+  done: string[];
+}) {
+  const { auth, run, busy } = useAppState();
+  return (
+    <Card>
+      <SectionTitle icon="📅" title="Daily Tasks" action={<Pill tone="warn">Resets 00:00 UTC</Pill>} />
+      <div className="space-y-3">
+        {tasks.map((t) => {
+          const claimed = done.includes(t.key);
+          return (
+            <div key={t.key} className="rounded-xl border border-border bg-background/40 p-3">
+              <div className="flex items-start gap-2">
+                <span className="text-xl">{t.emoji}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold">{t.title}</p>
+                  <p className="text-[11px] text-muted-foreground">{t.desc}</p>
+                </div>
+                <Pill tone="success">+{t.reward}</Pill>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <GhostButton
+                  onClick={() =>
+                    t.url
+                      ? openLink(t.url)
+                      : openLink(
+                          `https://t.me/share/url?url=${encodeURIComponent(APP.miniAppLink)}&text=${encodeURIComponent("🐯 Join Tigorix and earn real rewards!")}`
+                        )
+                  }
+                >
+                  {t.url ? "🔗 Open" : "📤 Share"}
+                </GhostButton>
+                <GoldButton
+                  disabled={busy || claimed}
+                  onClick={() =>
+                    void run(
+                      () => doClaimDailyTask({ data: { initData: auth, key: t.key } }),
+                      (r) => `🎉 +${r?.reward} ${APP.tokenName}`
+                    )
+                  }
+                >
+                  {claimed ? "✅ Claimed" : "🎁 Claim"}
+                </GoldButton>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }
 
