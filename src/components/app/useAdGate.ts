@@ -13,7 +13,7 @@ export function useAdGate() {
 
   /** Shows ONE interstitial ad, then runs the action if the ad was watched. */
   const gateWithInterstitial = useCallback(
-    async (action: () => void | Promise<void>) => {
+    async (action: () => unknown | Promise<unknown>) => {
       const blockId = boot.cfg.adsgramIntBlockId ?? "";
       if (!hasAdsgramBlock(blockId)) {
         await action();
@@ -36,7 +36,7 @@ export function useAdGate() {
 
   /** Shows N rewarded ads in sequence, then runs the action only if ALL were watched. */
   const gateWithRewardAds = useCallback(
-    async (count: number, action: () => void | Promise<void>) => {
+    async (count: number, action: () => unknown | Promise<unknown>) => {
       const blockId = boot.cfg.adsgramRewardBlockId ?? "";
       if (!hasAdsgramBlock(blockId) || count <= 0) {
         await action();
