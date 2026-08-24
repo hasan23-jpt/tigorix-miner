@@ -9,6 +9,7 @@ import { Card, GhostButton, GoldButton, Guide, Pill, SectionTitle } from "./ui";
 export function TasksTab() {
   const { auth, run, busy } = useAppState();
   const [opened, setOpened] = useState<Record<string, number>>({});
+  const [tab, setTab] = useState<"main" | "partner" | "daily">("main");
 
   const { data, isLoading } = useQuery({
     queryKey: ["tasks"],
