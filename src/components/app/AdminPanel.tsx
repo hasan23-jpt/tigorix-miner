@@ -11,13 +11,15 @@ import {
   adminSendBroadcast,
   adminTaskDelete,
   adminTaskSave,
+  adminSiteDelete,
+  adminSiteSave,
   adminUpdateUser,
   adminWithdrawDecision,
 } from "@/lib/api.functions";
 import { useAppState } from "./useApp";
 import { Card, Field, GhostButton, GoldButton, Guide, Pill, SectionTitle, Stat } from "./ui";
 
-const TABS = ["overview", "withdrawals", "users", "tasks", "codes", "settings"] as const;
+const TABS = ["overview", "withdrawals", "users", "tasks", "codes", "ads", "settings"] as const;
 type Tab = (typeof TABS)[number];
 
 export function AdminPanel({ onClose }: { onClose: () => void }) {
@@ -159,6 +161,13 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
         <TasksAdmin admin={admin} tasks={data.tasks} onDone={() => void refetch()} />
       ) : tab === "codes" ? (
         <CodesAdmin admin={admin} codes={data.codes} onDone={() => void refetch()} />
+      ) : tab === "ads" ? (
+        <AdsAdmin
+          admin={admin}
+          cfg={data.cfg}
+          sites={data.sites ?? []}
+          onDone={() => void refetch()}
+        />
       ) : (
         <SettingsAdmin admin={admin} cfg={data.cfg} onDone={() => void refetch()} />
       )}
@@ -559,5 +568,212 @@ function SettingsAdmin({
         </GoldButton>
       </div>
     </Card>
+  );
+}
+
+/* --------------------------------- ads & sites -------------------------------- */
+
+const AD_TEXT_FIELDS = [
+  ["adsgramIntBlockId", "Adsgram interstitial block ID"],
+  ["adsgramRewardBlockId", "Adsgram rewarded block ID"],
+] as const;
+
+const AD_NUMBER_FIELDS = [
+  ["intAdReward", "Interstitial reward (tokens per ad)"],
+  ["intAdsDailyCap", "Interstitial daily ad limit"],
+  ["rewardAdReward", "Rewarded block reward (tokens per ad)"],
+  ["rewardAdsDailyCap", "Rewarded block daily ad limit"],
+  ["withdrawAdsRequired", "Daily ads required to withdraw"],
+  ["withdrawMinRefs", "Valid referrals required to withdraw"],
+  ["withdrawCooldownHours", "Withdrawal cooldown (hours)"],
+  ["withdrawAdsToWatch", "Ads to watch when submitting a withdrawal"],
+  ["day1Ads", "Referral day-1 ads required"],
+  ["day2Ads", "Referral day-2 ads required"],
+] as const;
+
+type SiteRow = { id: string; title: string; url: string; reward: number; active: boolean };
+
+function AdsAdmin({
+  admin,
+  cfg,
+  sites,
+  onDone,
+}: {
+  admin: AdminAuth;
+  cfg: Record<string, unknown>;
+  sites: SiteRow[];
+  onDone: () => void;
+}) {
+  const { run, busy } = useAppState();
+  const [form, setForm] = useState<Record<string, string>>(
+    Object.fromEntries(
+      [...AD_TEXT_FIELDS, ...AD_NUMBER_FIELDS].map(([k]) => [k, String(cfg[k] ?? "")])
+    )
+  );
+  const [site, setSite] = useState<{ id?: string; title: string; url: string; reward: string }>({
+    title: "",
+    url: "",
+    reward: "50",
+  });
+
+  return (
+    <>
+      <Card>
+        <SectionTitle icon="📺" title="Ad Networks" action={<Pill tone="info">Adsgram</Pill>} />
+        <Guide>
+          Set the Adsgram block IDs and rewards. The interstitial block gates mining, reward codes and
+          claims; the rewarded block pays per view. Changes apply instantly.
+        </Guide>
+        <div className="space-y-2">
+          {AD_TEXT_FIELDS.map(([k, label]) => (
+            <Field
+              key={k}
+              label={label}
+              value={form[k] ?? ""}
+              onChange={(e) => setForm({ ...form, [k]: e.target.value })}
+            />
+          ))}
+          {AD_NUMBER_FIELDS.map(([k, label]) => (
+            <Field
+              key={k}
+              label={label}
+              inputMode="numeric"
+              value={form[k] ?? ""}
+              onChange={(e) => setForm({ ...form, [k]: e.target.value })}
+            />
+          ))}
+          <GoldButton
+            disabled={busy}
+            onClick={() => {
+              const patch: Record<string, string | number> = {};
+              for (const [k] of AD_TEXT_FIELDS) patch[k] = (form[k] ?? "").trim();
+              for (const [k] of AD_NUMBER_FIELDS) {
+                const v = Number(form[k]);
+                if (Number.isFinite(v)) patch[k] = v;
+              }
+              void run(
+                () => adminSaveConfig({ data: { ...admin, patch } }),
+                () => "✅ Ad settings saved"
+              ).then(onDone);
+            }}
+          >
+            💾 Save Ad Settings
+          </GoldButton>
+        </div>
+      </Card>
+
+      <Card>
+        <SectionTitle icon="🌐" title="Visit Sites" action={<Pill>{sites.length} sites</Pill>} />
+        <Guide>
+          Each site must be viewed for 10 seconds before the claim button unlocks, and can be claimed
+          once every 24 hours per user.
+        </Guide>
+        <div className="mb-4 space-y-2">
+          <Field
+            label="Site title"
+            value={site.title}
+            onChange={(e) => setSite({ ...site, title: e.target.value })}
+          />
+          <Field
+            label="Site URL"
+            value={site.url}
+            onChange={(e) => setSite({ ...site, url: e.target.value })}
+          />
+          <Field
+            label="Reward (tokens)"
+            inputMode="numeric"
+            value={site.reward}
+            onChange={(e) => setSite({ ...site, reward: e.target.value })}
+          />
+          <GoldButton
+            disabled={busy || !site.title.trim() || !site.url.trim()}
+            onClick={() =>
+              void run(
+                () =>
+                  adminSiteSave({
+                    data: {
+                      ...admin,
+                      site: {
+                        ...(site.id ? { id: site.id } : {}),
+                        title: site.title.trim(),
+                        url: site.url.trim(),
+                        reward: Number(site.reward) || 0,
+                        active: true,
+                      },
+                    },
+                  }),
+                () => (site.id ? "✅ Site updated" : "✅ Site added")
+              ).then(() => {
+                setSite({ title: "", url: "", reward: "50" });
+                onDone();
+              })
+            }
+          >
+            {site.id ? "💾 Update Site" : "➕ Add Site"}
+          </GoldButton>
+          {site.id && (
+            <GhostButton onClick={() => setSite({ title: "", url: "", reward: "50" })}>
+              ✖️ Cancel edit
+            </GhostButton>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          {sites.map((s) => (
+            <div key={s.id} className="rounded-xl border border-border bg-background/40 p-3">
+              <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-bold">{s.title}</p>
+                  <p className="truncate text-[10px] text-muted-foreground">{s.url}</p>
+                </div>
+                <Pill tone={s.active ? "success" : "warn"}>
+                  {fmt(s.reward)} {APP.tokenName}
+                </Pill>
+              </div>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                <GhostButton
+                  onClick={() =>
+                    setSite({ id: s.id, title: s.title, url: s.url, reward: String(s.reward) })
+                  }
+                >
+                  ✏️ Edit
+                </GhostButton>
+                <GhostButton
+                  disabled={busy}
+                  onClick={() =>
+                    void run(
+                      () =>
+                        adminSiteSave({
+                          data: { ...admin, site: { id: s.id, active: !s.active } },
+                        }),
+                      () => (s.active ? "⏸ Paused" : "▶️ Activated")
+                    ).then(onDone)
+                  }
+                >
+                  {s.active ? "⏸ Pause" : "▶️ Enable"}
+                </GhostButton>
+                <GhostButton
+                  disabled={busy}
+                  onClick={() => {
+                    if (!window.confirm(`Delete "${s.title}"?`)) return;
+                    void run(
+                      () => adminSiteDelete({ data: { ...admin, id: s.id } }),
+                      () => "🗑 Site deleted"
+                    ).then(onDone);
+                  }}
+                >
+                  🗑 Delete
+                </GhostButton>
+              </div>
+            </div>
+          ))}
+          {!sites.length && (
+            <p className="py-4 text-center text-xs text-muted-foreground">
+              No sites yet — add one above.
+            </p>
+          )}
+        </div>
+      </Card>
+    </>
   );
 }
