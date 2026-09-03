@@ -753,11 +753,16 @@ export async function advanceReferral(user: UserDoc, cfg: Cfg) {
       patch["day2Paid"] === true ? (referrer.refActive ?? 0) + 1 : (referrer.refActive ?? 0),
   });
   if (referrer.notifications !== false) {
+    const stage =
+      patch["day2Paid"] === true
+        ? `✅ Status: <b>ACTIVE (verified)</b> — they watched ${cfg.day2Ads} more ads`
+        : `🟡 Status: <b>HALF VERIFIED</b> — they watched ${cfg.day1Ads} ads`;
     await sendMessage(
       ref.referrer,
-      `🔥 <b>Referral progress!</b>\n\n👤 ${label(user)}\n🎁 +${bonus} ${APP.tokenName} unlocked\n💼 Claim it in the Refer tab.`,
+      `🔥 <b>Referral progress!</b>\n\n👤 ${label(user)}\n${stage}\n🎁 +${bonus} ${APP.tokenName} unlocked\n💼 Claim it in the Refer tab.`,
       [[btn.miniApp]]
     );
+
   }
 }
 
