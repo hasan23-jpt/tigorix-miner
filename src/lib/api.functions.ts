@@ -29,6 +29,9 @@ import {
   adminSaveCode,
   adminDeleteCode,
   adminBroadcast,
+  adminSearchUsers,
+  adminUserDetail,
+  adminFixBalance,
   saveCfg,
   isAdmin,
   getCfg,
@@ -40,6 +43,7 @@ import {
   adminSaveSite,
   adminDeleteSite,
 } from "./core.server";
+import type { AdNetwork } from "./core.server";
 import { verifyInitData } from "./bot.server";
 
 type Auth = { initData: string };
@@ -76,6 +80,16 @@ export const bootstrap = createServerFn({ method: "POST" })
         intAdsDailyCap: cfg.intAdsDailyCap,
         rewardAdReward: cfg.rewardAdReward,
         rewardAdsDailyCap: cfg.rewardAdsDailyCap,
+        gigaBlockId: cfg.gigaBlockId,
+        gigaAdReward: cfg.gigaAdReward,
+        gigaAdsDailyCap: cfg.gigaAdsDailyCap,
+        monetagBlockId: cfg.monetagBlockId,
+        monetagAdReward: cfg.monetagAdReward,
+        monetagAdsDailyCap: cfg.monetagAdsDailyCap,
+        bitvexBlockId: cfg.bitvexBlockId,
+        bitvexAdReward: cfg.bitvexAdReward,
+        bitvexAdsDailyCap: cfg.bitvexAdsDailyCap,
+        autoIntAd: cfg.autoIntAd !== false,
         withdrawAdsRequired: cfg.withdrawAdsRequired,
         withdrawMinRefs: cfg.withdrawMinRefs,
         withdrawCooldownHours: cfg.withdrawCooldownHours,
@@ -113,6 +127,12 @@ function publicUser(u: {
   intAdsDayKey: string;
   rewardAdsToday: number;
   rewardAdsDayKey: string;
+  gigaAdsToday: number;
+  gigaAdsDayKey: string;
+  monetagAdsToday: number;
+  monetagAdsDayKey: string;
+  bitvexAdsToday: number;
+  bitvexAdsDayKey: string;
   wallet: string;
   withdrawCount: number;
   totalPaidUsd: number;
@@ -138,6 +158,9 @@ function publicUser(u: {
     adsTotal: u.adsTotal ?? 0,
     intAdsToday: u.intAdsDayKey === today ? (u.intAdsToday ?? 0) : 0,
     rewardAdsToday: u.rewardAdsDayKey === today ? (u.rewardAdsToday ?? 0) : 0,
+    gigaAdsToday: u.gigaAdsDayKey === today ? (u.gigaAdsToday ?? 0) : 0,
+    monetagAdsToday: u.monetagAdsDayKey === today ? (u.monetagAdsToday ?? 0) : 0,
+    bitvexAdsToday: u.bitvexAdsDayKey === today ? (u.bitvexAdsToday ?? 0) : 0,
     wallet: u.wallet ?? "",
     withdrawCount: u.withdrawCount ?? 0,
     totalPaidUsd: u.totalPaidUsd ?? 0,
@@ -215,10 +238,11 @@ export const doClaimDailyTask = createServerFn({ method: "POST" })
   });
 
 export const doRecordAd = createServerFn({ method: "POST" })
-  .inputValidator((d: Auth & { network: "int" | "reward" }) => d)
+  .inputValidator((d: Auth & { network: AdNetwork }) => d)
   .handler(async ({ data }) => {
     const { user, cfg } = await session(data.initData);
-    const network = data.network === "reward" ? "reward" : "int";
+    const allowed: AdNetwork[] = ["int", "reward", "giga", "monetag", "bitvex"];
+    const network = allowed.includes(data.network) ? data.network : "int";
     return recordAdView(user, cfg, network);
   });
 
@@ -388,10 +412,45 @@ export const adminCodeDelete = createServerFn({ method: "POST" })
   });
 
 export const adminSendBroadcast = createServerFn({ method: "POST" })
-  .inputValidator((d: AdminAuth & { text: string }) => d)
+  .inputValidator(
+    (
+      d: AdminAuth & {
+        text: string;
+        photo?: string;
+        buttons?: { text: string; url: string }[];
+      }
+    ) => d
+  )
   .handler(async ({ data }) => {
     await adminSession(data.initData, data.password);
-    return adminBroadcast(String(data.text ?? "").slice(0, 3000));
+    return adminBroadcast(String(data.text ?? "").slice(0, 3000), {
+      photo: String(data.photo ?? "").slice(0, 500),
+      buttons: (data.buttons ?? []).slice(0, 3).map((b) => ({
+        text: String(b.text ?? "").slice(0, 40),
+        url: String(b.url ?? "").slice(0, 300),
+      })),
+    });
+  });
+
+export const adminFindUsers = createServerFn({ method: "POST" })
+  .inputValidator((d: AdminAuth & { query: string }) => d)
+  .handler(async ({ data }) => {
+    await adminSession(data.initData, data.password);
+    return adminSearchUsers(String(data.query ?? "").slice(0, 60));
+  });
+
+export const adminUserInfo = createServerFn({ method: "POST" })
+  .inputValidator((d: AdminAuth & { userId: string }) => d)
+  .handler(async ({ data }) => {
+    await adminSession(data.initData, data.password);
+    return adminUserDetail(String(data.userId ?? ""));
+  });
+
+export const adminRepairBalance = createServerFn({ method: "POST" })
+  .inputValidator((d: AdminAuth & { userId: string }) => d)
+  .handler(async ({ data }) => {
+    await adminSession(data.initData, data.password);
+    return adminFixBalance(String(data.userId ?? ""));
   });
 /* ---------------------------- public payout proof ---------------------------- */
 

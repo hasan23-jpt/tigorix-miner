@@ -1,7 +1,7 @@
 /** Tigorix business logic. Server only — never imported by the browser. */
 import { APP, DAILY_REWARDS, utcDayKey } from "./config";
 import { getDoc, setDoc, deleteDoc, queryDocs } from "./fsdb.server";
-import { btn, isChannelMember, notifyAdmin, sendMessage } from "./bot.server";
+import { btn, isChannelMember, notifyAdmin, sendMessage, sendPhoto } from "./bot.server";
 import type { AuthUser } from "./bot.server";
 
 export type Cfg = {
@@ -22,6 +22,17 @@ export type Cfg = {
   intAdsDailyCap: number;
   rewardAdReward: number;
   rewardAdsDailyCap: number;
+  gigaBlockId: string;
+  gigaAdReward: number;
+  gigaAdsDailyCap: number;
+  monetagBlockId: string;
+  monetagAdReward: number;
+  monetagAdsDailyCap: number;
+  bitvexBlockId: string;
+  bitvexAdReward: number;
+  bitvexAdsDailyCap: number;
+  autoIntAd: boolean;
+  bannerUrl: string;
   withdrawAdsRequired: number;
   withdrawMinRefs: number;
   withdrawCooldownHours: number;
@@ -47,12 +58,23 @@ const DEFAULT_CFG: Cfg = {
   day2Ads: 15,
   adReward: 2,
   adsDailyCap: 20,
-  adsgramIntBlockId: "",
-  adsgramRewardBlockId: "",
+  adsgramIntBlockId: "int-43953",
+  adsgramRewardBlockId: "43952",
   intAdReward: 50,
   intAdsDailyCap: 10,
   rewardAdReward: 5,
   rewardAdsDailyCap: 10,
+  gigaBlockId: "",
+  gigaAdReward: 20,
+  gigaAdsDailyCap: 10,
+  monetagBlockId: "11632109",
+  monetagAdReward: 20,
+  monetagAdsDailyCap: 10,
+  bitvexBlockId: "000363",
+  bitvexAdReward: 20,
+  bitvexAdsDailyCap: 10,
+  autoIntAd: true,
+  bannerUrl: "",
   withdrawAdsRequired: 20,
   withdrawMinRefs: 2,
   withdrawCooldownHours: 12,
@@ -103,6 +125,13 @@ export type UserDoc = {
   intAdsDayKey: string;
   rewardAdsToday: number;
   rewardAdsDayKey: string;
+  gigaAdsToday: number;
+  gigaAdsDayKey: string;
+  monetagAdsToday: number;
+  monetagAdsDayKey: string;
+  bitvexAdsToday: number;
+  bitvexAdsDayKey: string;
+  miningNotified: boolean;
   lastWithdrawAt: number;
   wallet: string;
   withdrawCount: number;
@@ -141,6 +170,13 @@ function blankUser(a: AuthUser): UserDoc {
     intAdsDayKey: "",
     rewardAdsToday: 0,
     rewardAdsDayKey: "",
+    gigaAdsToday: 0,
+    gigaAdsDayKey: "",
+    monetagAdsToday: 0,
+    monetagAdsDayKey: "",
+    bitvexAdsToday: 0,
+    bitvexAdsDayKey: "",
+    miningNotified: true,
     lastWithdrawAt: 0,
     wallet: "",
     withdrawCount: 0,
@@ -330,9 +366,14 @@ export async function startMining(user: UserDoc, cfg: Cfg) {
   assertActive(user);
   const state = miningState(user, cfg);
   if (state.status !== "idle") throw new Error("⛏ Mining is already in progress.");
-  await setDoc(`users/${user.id}`, { miningStart: Date.now(), miningClaimed: false });
+  await setDoc(`users/${user.id}`, {
+    miningStart: Date.now(),
+    miningClaimed: false,
+    miningNotified: false,
+  });
   user.miningStart = Date.now();
   user.miningClaimed = false;
+  user.miningNotified = false;
   return miningState(user, cfg);
 }
 
@@ -340,9 +381,10 @@ export async function claimMining(user: UserDoc, cfg: Cfg) {
   assertActive(user);
   const state = miningState(user, cfg);
   if (state.status !== "claimable") throw new Error("⏳ Mining is not finished yet.");
-  await setDoc(`users/${user.id}`, { miningStart: 0, miningClaimed: true });
+  await setDoc(`users/${user.id}`, { miningStart: 0, miningClaimed: true, miningNotified: true });
   user.miningStart = 0;
   user.miningClaimed = true;
+  user.miningNotified = true;
   await credit(user, state.reward, "mining", "Mining claim");
   if (user.notifications !== false) {
     await sendMessage(
@@ -352,6 +394,31 @@ export async function claimMining(user: UserDoc, cfg: Cfg) {
     );
   }
   return { reward: state.reward, balance: user.balance };
+}
+
+/**
+ * Sends the "mining finished" bot notification the moment a session ends, even
+ * when the user is not inside the mini app. Called by the cron endpoint.
+ */
+export async function notifyFinishedMining() {
+  const cfg = await getCfg();
+  const duration = Math.max(1, cfg.miningHours) * 3600 * 1000;
+  const users = await queryDocs<UserDoc>("users", { limit: 1000 });
+  let notified = 0;
+  for (const u of users) {
+    if (u.suspended || u.notifications === false) continue;
+    if (!u.miningStart || u.miningClaimed || u.miningNotified) continue;
+    if (Date.now() < u.miningStart + duration) continue;
+    const reward = cfg.miningReward * cfg.miningHours;
+    const sent = await sendMessage(
+      u.id,
+      `\u26cf <b>Mining complete!</b>\n\n\u2705 Your session finished and <b>${reward} ${APP.tokenName}</b> is waiting.\n\ud83c\udf81 Open the app and tap <b>Claim Mining Reward</b> to collect it, then start a new session.`,
+      [[btn.miniApp]]
+    );
+    await setDoc(`users/${u.id}`, { miningNotified: true });
+    if (sent) notified += 1;
+  }
+  return notified;
 }
 
 /* ------------------------------ daily bonus ---------------------------- */
@@ -543,7 +610,53 @@ export async function adminDeleteSite(id: string) {
 
 /* ------------------------------ ads / referrals ------------------------ */
 
-export type AdNetwork = "int" | "reward";
+export type AdNetwork = "int" | "reward" | "giga" | "monetag" | "bitvex";
+
+const AD_NETWORKS: Record<
+  AdNetwork,
+  { label: string; reward: keyof Cfg; cap: keyof Cfg; block: keyof Cfg }
+> = {
+  int: {
+    label: "Adsgram interstitial",
+    reward: "intAdReward",
+    cap: "intAdsDailyCap",
+    block: "adsgramIntBlockId",
+  },
+  reward: {
+    label: "Adsgram rewarded",
+    reward: "rewardAdReward",
+    cap: "rewardAdsDailyCap",
+    block: "adsgramRewardBlockId",
+  },
+  giga: {
+    label: "Gigapub",
+    reward: "gigaAdReward",
+    cap: "gigaAdsDailyCap",
+    block: "gigaBlockId",
+  },
+  monetag: {
+    label: "Monetag",
+    reward: "monetagAdReward",
+    cap: "monetagAdsDailyCap",
+    block: "monetagBlockId",
+  },
+  bitvex: {
+    label: "Adsbitvex",
+    reward: "bitvexAdReward",
+    cap: "bitvexAdsDailyCap",
+    block: "bitvexBlockId",
+  },
+};
+
+export function adNetworkKeys(net: AdNetwork) {
+  return { dayKey: `${net}AdsDayKey` as const, count: `${net}AdsToday` as const };
+}
+
+function netCount(user: UserDoc, net: AdNetwork) {
+  const { dayKey, count } = adNetworkKeys(net);
+  const u = user as unknown as Record<string, unknown>;
+  return String(u[dayKey] ?? "") === utcDayKey() ? Number(u[count] ?? 0) : 0;
+}
 
 /**
  * Rewarded ad view from an ad network block. Each network has its own daily
@@ -551,43 +664,35 @@ export type AdNetwork = "int" | "reward";
  */
 export async function recordAdView(user: UserDoc, cfg: Cfg, network: AdNetwork) {
   assertActive(user);
+  const meta = AD_NETWORKS[network];
+  if (!meta) throw new Error("Unknown ad network");
   const today = utcDayKey();
-  const isInt = network === "int";
-  const cap = isInt ? cfg.intAdsDailyCap : cfg.rewardAdsDailyCap;
-  const reward = Math.max(0, isInt ? cfg.intAdReward : cfg.rewardAdReward);
-  const dayKey = isInt ? user.intAdsDayKey : user.rewardAdsDayKey;
-  const seenToday = dayKey === today ? (isInt ? user.intAdsToday : user.rewardAdsToday) || 0 : 0;
+  const cap = Math.max(0, Number(cfg[meta.cap] ?? 0));
+  const reward = Math.max(0, Number(cfg[meta.reward] ?? 0));
+  const seenToday = netCount(user, network);
   if (seenToday >= cap)
     throw new Error(
       `📺 Daily limit reached for this ad block (${cap}). Come back after 00:00 UTC.`
     );
 
   const adsTodayTotal = user.adsDayKey === today ? (user.adsToday ?? 0) : 0;
+  const { dayKey, count } = adNetworkKeys(network);
   const patch: Record<string, unknown> = {
     adsDayKey: today,
     adsToday: adsTodayTotal + 1,
     adsTotal: (user.adsTotal ?? 0) + 1,
+    [dayKey]: today,
+    [count]: seenToday + 1,
   };
-  if (isInt) {
-    patch["intAdsDayKey"] = today;
-    patch["intAdsToday"] = seenToday + 1;
-  } else {
-    patch["rewardAdsDayKey"] = today;
-    patch["rewardAdsToday"] = seenToday + 1;
-  }
   await setDoc(`users/${user.id}`, patch);
+  const mutable = user as unknown as Record<string, unknown>;
+  mutable[dayKey] = today;
+  mutable[count] = seenToday + 1;
   user.adsDayKey = today;
   user.adsToday = adsTodayTotal + 1;
   user.adsTotal = (user.adsTotal ?? 0) + 1;
-  if (isInt) {
-    user.intAdsDayKey = today;
-    user.intAdsToday = seenToday + 1;
-  } else {
-    user.rewardAdsDayKey = today;
-    user.rewardAdsToday = seenToday + 1;
-  }
 
-  if (reward > 0) await credit(user, reward, "ad", `${isInt ? "Interstitial" : "Rewarded"} ad view`);
+  if (reward > 0) await credit(user, reward, "ad", `${meta.label} ad view`);
   await advanceReferral(user, cfg);
   return {
     network,
@@ -602,8 +707,9 @@ export async function recordAdView(user: UserDoc, cfg: Cfg, network: AdNetwork) 
 
 /**
  * Referral milestones are driven by the invited friend's ad views:
- * day 1 → cfg.day1Ads views, day 2 → cfg.day2Ads views. Each stage pings the
- * referrer through the bot.
+ * stage 1 ("half verified") after cfg.day1Ads views, stage 2 ("verified")
+ * after a further cfg.day2Ads views. Each stage pays the referrer and pings
+ * them through the bot.
  */
 export async function advanceReferral(user: UserDoc, cfg: Cfg) {
   const ref = await getDoc<{
@@ -617,12 +723,13 @@ export async function advanceReferral(user: UserDoc, cfg: Cfg) {
     createdAt: number;
   }>(`referrals/${user.id}`);
   if (!ref || ref.fake) return;
-  const dayIndex = Math.floor((Date.now() - (ref.createdAt ?? 0)) / 86400000) + 1;
+  if (ref.day1Paid && ref.day2Paid) return;
   const patch: Record<string, unknown> = {};
-  if (dayIndex <= 1) patch["day1Ads"] = (ref.day1Ads ?? 0) + 1;
-  else if (dayIndex === 2) patch["day2Ads"] = (ref.day2Ads ?? 0) + 1;
+  if (!ref.day1Paid) patch["day1Ads"] = (ref.day1Ads ?? 0) + 1;
+  else patch["day2Ads"] = (ref.day2Ads ?? 0) + 1;
   const day1 = Number(patch["day1Ads"] ?? ref.day1Ads ?? 0);
   const day2 = Number(patch["day2Ads"] ?? ref.day2Ads ?? 0);
+
 
   let bonus = 0;
   if (!ref.day1Paid && day1 >= cfg.day1Ads) {
@@ -646,11 +753,16 @@ export async function advanceReferral(user: UserDoc, cfg: Cfg) {
       patch["day2Paid"] === true ? (referrer.refActive ?? 0) + 1 : (referrer.refActive ?? 0),
   });
   if (referrer.notifications !== false) {
+    const stage =
+      patch["day2Paid"] === true
+        ? `✅ Status: <b>ACTIVE (verified)</b> — they watched ${cfg.day2Ads} more ads`
+        : `🟡 Status: <b>HALF VERIFIED</b> — they watched ${cfg.day1Ads} ads`;
     await sendMessage(
       ref.referrer,
-      `🔥 <b>Referral progress!</b>\n\n👤 ${label(user)}\n🎁 +${bonus} ${APP.tokenName} unlocked\n💼 Claim it in the Refer tab.`,
+      `🔥 <b>Referral progress!</b>\n\n👤 ${label(user)}\n${stage}\n🎁 +${bonus} ${APP.tokenName} unlocked\n💼 Claim it in the Refer tab.`,
       [[btn.miniApp]]
     );
+
   }
 }
 
@@ -986,7 +1098,26 @@ export async function adminOverview() {
         suspended: !!u.suspended,
         createdAt: u.createdAt ?? 0,
       })),
-    withdrawals: withdrawals.sort((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(0, 100),
+    withdrawals: await Promise.all(
+      withdrawals
+        .sort((a, b) => (b.at ?? 0) - (a.at ?? 0))
+        .slice(0, 100)
+        .map(async (w) => {
+          if (w.status !== "pending") return { ...w, audit: null };
+          const audit = await ledgerAudit(w.userId);
+          const u = users.find((x) => x.id === w.userId);
+          return {
+            ...w,
+            audit: {
+              ...audit,
+              adsTotal: u?.adsTotal ?? 0,
+              refs: u?.refCount ?? 0,
+              refActive: u?.refActive ?? 0,
+              withdrawCount: u?.withdrawCount ?? 0,
+            },
+          };
+        })
+    ),
     tasks,
     codes,
     sites,
@@ -1127,13 +1258,144 @@ export async function adminDeleteCode(code: string) {
   return { ok: true };
 }
 
-export async function adminBroadcast(text: string) {
+export async function adminBroadcast(
+  text: string,
+  opts: { photo?: string; buttons?: { text: string; url: string }[] } = {}
+) {
   const users = await queryDocs<UserDoc>("users", { limit: 1000 });
+  const keyboard: { text: string; url: string }[][] = [];
+  const extra = (opts.buttons ?? []).filter((b) => b.text && b.url);
+  if (extra.length) for (const b of extra) keyboard.push([b]);
+  keyboard.push([btn.miniApp], [btn.community, btn.payment]);
+  const photo = (opts.photo ?? "").trim();
   let sent = 0;
   for (const u of users) {
     if (u.notifications === false) continue;
-    const r = await sendMessage(u.id, `📢 ${text}`, [[btn.miniApp]]);
+    const body = `\ud83d\udce2 ${text}`;
+    const r = photo
+      ? await sendPhoto(u.id, photo, body, keyboard)
+      : await sendMessage(u.id, body, keyboard);
     if (r) sent++;
   }
   return { sent };
+}
+
+/* --------------------------- user audit / search ------------------------- */
+
+export type LedgerAudit = {
+  ledger: number;
+  balance: number;
+  diff: number;
+  ok: boolean;
+  entries: number;
+};
+
+/** Recomputes a user's balance from the transaction ledger. */
+export async function ledgerAudit(userId: string): Promise<LedgerAudit> {
+  const [tx, user] = await Promise.all([
+    queryDocs<{ amount: number }>("transactions", {
+      where: [{ field: "userId", op: "EQUAL", value: userId }],
+      limit: 1000,
+    }),
+    getDoc<UserDoc>(`users/${userId}`),
+  ]);
+  const ledger = tx.reduce((sum, t) => sum + (t.amount ?? 0), 0);
+  const balance = user?.balance ?? 0;
+  const diff = balance - ledger;
+  return { ledger, balance, diff, ok: Math.abs(diff) <= 1, entries: tx.length };
+}
+
+/** Rewrites the stored balance to match the ledger (admin repair action). */
+export async function adminFixBalance(userId: string) {
+  const audit = await ledgerAudit(userId);
+  if (audit.ok) return { ...audit, fixed: false };
+  await setDoc(`users/${userId}`, { balance: Math.max(0, Math.round(audit.ledger)) });
+  return { ...audit, balance: Math.max(0, Math.round(audit.ledger)), diff: 0, ok: true, fixed: true };
+}
+
+export async function adminSearchUsers(query: string) {
+  const q = String(query ?? "").trim().toLowerCase().replace(/^@/, "");
+  const users = await queryDocs<UserDoc>("users", { limit: 1000 });
+  const matches = (q ? users.filter(
+    (u) =>
+      u.id.includes(q) ||
+      (u.username ?? "").toLowerCase().includes(q) ||
+      (u.firstName ?? "").toLowerCase().includes(q) ||
+      (u.wallet ?? "").toLowerCase().includes(q)
+  ) : users.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+  ).slice(0, 30);
+  return matches.map((u) => ({
+    id: u.id,
+    name: label(u),
+    balance: u.balance ?? 0,
+    refs: u.refCount ?? 0,
+    suspended: !!u.suspended,
+    createdAt: u.createdAt ?? 0,
+  }));
+}
+
+/** Full activity dossier for one user, including the balance audit. */
+export async function adminUserDetail(userId: string) {
+  const user = await getDoc<UserDoc>(`users/${userId}`);
+  if (!user) throw new Error("User not found");
+  const [audit, tx, withdrawals, refs, taskClaims, siteClaims] = await Promise.all([
+    ledgerAudit(userId),
+    listTransactions(user),
+    listWithdrawals(userId),
+    queryDocs<{ status: string; fake: boolean; name: string; createdAt: number }>("referrals", {
+      where: [{ field: "referrer", op: "EQUAL", value: userId }],
+      limit: 200,
+    }),
+    queryDocs<{ taskId: string; reward: number; at: number }>("taskClaims", {
+      where: [{ field: "userId", op: "EQUAL", value: userId }],
+      limit: 300,
+    }),
+    queryDocs<{ siteId: string; at: number }>("siteClaims", {
+      where: [{ field: "userId", op: "EQUAL", value: userId }],
+      limit: 300,
+    }),
+  ]);
+  const today = utcDayKey();
+  return {
+    user: {
+      id: user.id,
+      name: label(user),
+      username: user.username ?? "",
+      balance: user.balance ?? 0,
+      totalEarned: user.totalEarned ?? 0,
+      suspended: !!user.suspended,
+      suspendReason: user.suspendReason ?? "",
+      wallet: user.wallet ?? "",
+      ip: user.ip ?? "",
+      device: user.device ?? "",
+      refCount: user.refCount ?? 0,
+      refActive: user.refActive ?? 0,
+      refEarnPending: user.refEarnPending ?? 0,
+      refEarnClaimed: user.refEarnClaimed ?? 0,
+      adsTotal: user.adsTotal ?? 0,
+      adsToday: user.adsDayKey === today ? (user.adsToday ?? 0) : 0,
+      withdrawCount: user.withdrawCount ?? 0,
+      totalPaidUsd: user.totalPaidUsd ?? 0,
+      dailyStreak: user.dailyStreak ?? 0,
+      createdAt: user.createdAt ?? 0,
+      lastSeen: user.lastSeen ?? 0,
+    },
+    audit,
+    transactions: tx.slice(0, 60),
+    withdrawals,
+    referrals: refs
+      .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+      .map((r) => ({
+        name: r.name ?? "User",
+        status: r.fake ? "fake" : (r.status ?? "pending"),
+        at: r.createdAt ?? 0,
+      })),
+    counts: {
+      tasks: taskClaims.length,
+      sites: siteClaims.length,
+      transactions: audit.entries,
+      withdrawals: withdrawals.length,
+      approvedWithdrawals: withdrawals.filter((w) => w.status === "approved").length,
+    },
+  };
 }
