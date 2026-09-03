@@ -22,6 +22,17 @@ export type Cfg = {
   intAdsDailyCap: number;
   rewardAdReward: number;
   rewardAdsDailyCap: number;
+  gigaBlockId: string;
+  gigaAdReward: number;
+  gigaAdsDailyCap: number;
+  monetagBlockId: string;
+  monetagAdReward: number;
+  monetagAdsDailyCap: number;
+  bitvexBlockId: string;
+  bitvexAdReward: number;
+  bitvexAdsDailyCap: number;
+  autoIntAd: boolean;
+  bannerUrl: string;
   withdrawAdsRequired: number;
   withdrawMinRefs: number;
   withdrawCooldownHours: number;
@@ -47,12 +58,23 @@ const DEFAULT_CFG: Cfg = {
   day2Ads: 15,
   adReward: 2,
   adsDailyCap: 20,
-  adsgramIntBlockId: "",
-  adsgramRewardBlockId: "",
+  adsgramIntBlockId: "int-43953",
+  adsgramRewardBlockId: "43952",
   intAdReward: 50,
   intAdsDailyCap: 10,
   rewardAdReward: 5,
   rewardAdsDailyCap: 10,
+  gigaBlockId: "",
+  gigaAdReward: 20,
+  gigaAdsDailyCap: 10,
+  monetagBlockId: "11632109",
+  monetagAdReward: 20,
+  monetagAdsDailyCap: 10,
+  bitvexBlockId: "000363",
+  bitvexAdReward: 20,
+  bitvexAdsDailyCap: 10,
+  autoIntAd: true,
+  bannerUrl: "",
   withdrawAdsRequired: 20,
   withdrawMinRefs: 2,
   withdrawCooldownHours: 12,
@@ -103,6 +125,13 @@ export type UserDoc = {
   intAdsDayKey: string;
   rewardAdsToday: number;
   rewardAdsDayKey: string;
+  gigaAdsToday: number;
+  gigaAdsDayKey: string;
+  monetagAdsToday: number;
+  monetagAdsDayKey: string;
+  bitvexAdsToday: number;
+  bitvexAdsDayKey: string;
+  miningNotified: boolean;
   lastWithdrawAt: number;
   wallet: string;
   withdrawCount: number;
@@ -141,6 +170,13 @@ function blankUser(a: AuthUser): UserDoc {
     intAdsDayKey: "",
     rewardAdsToday: 0,
     rewardAdsDayKey: "",
+    gigaAdsToday: 0,
+    gigaAdsDayKey: "",
+    monetagAdsToday: 0,
+    monetagAdsDayKey: "",
+    bitvexAdsToday: 0,
+    bitvexAdsDayKey: "",
+    miningNotified: true,
     lastWithdrawAt: 0,
     wallet: "",
     withdrawCount: 0,
