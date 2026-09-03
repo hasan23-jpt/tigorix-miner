@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PayoutsRouteImport } from './routes/payouts'
+import { Route as ApiPublicCronMiningRouteImport } from './routes/api/public/cron/mining'
 import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram/webhook'
 
 const IndexRoute = IndexRouteImport.update({
@@ -23,6 +24,11 @@ const PayoutsRoute = PayoutsRouteImport.update({
   path: '/payouts',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicCronMiningRoute = ApiPublicCronMiningRouteImport.update({
+  id: '/api/public/cron/mining',
+  path: '/api/public/cron/mining',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicTelegramWebhookRoute =
   ApiPublicTelegramWebhookRouteImport.update({
     id: '/api/public/telegram/webhook',
@@ -33,30 +39,47 @@ const ApiPublicTelegramWebhookRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/payouts': typeof PayoutsRoute
+  '/api/public/cron/mining': typeof ApiPublicCronMiningRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/payouts': typeof PayoutsRoute
+  '/api/public/cron/mining': typeof ApiPublicCronMiningRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/payouts': typeof PayoutsRoute
+  '/api/public/cron/mining': typeof ApiPublicCronMiningRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/payouts' | '/api/public/telegram/webhook'
+  fullPaths:
+    | '/'
+    | '/payouts'
+    | '/api/public/cron/mining'
+    | '/api/public/telegram/webhook'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/payouts' | '/api/public/telegram/webhook'
-  id: '__root__' | '/' | '/payouts' | '/api/public/telegram/webhook'
+  to:
+    | '/'
+    | '/payouts'
+    | '/api/public/cron/mining'
+    | '/api/public/telegram/webhook'
+  id:
+    | '__root__'
+    | '/'
+    | '/payouts'
+    | '/api/public/cron/mining'
+    | '/api/public/telegram/webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   PayoutsRoute: typeof PayoutsRoute
+  ApiPublicCronMiningRoute: typeof ApiPublicCronMiningRoute
   ApiPublicTelegramWebhookRoute: typeof ApiPublicTelegramWebhookRoute
 }
 
@@ -76,6 +99,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PayoutsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/cron/mining': {
+      id: '/api/public/cron/mining'
+      path: '/api/public/cron/mining'
+      fullPath: '/api/public/cron/mining'
+      preLoaderRoute: typeof ApiPublicCronMiningRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/telegram/webhook': {
       id: '/api/public/telegram/webhook'
       path: '/api/public/telegram/webhook'
@@ -89,6 +119,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   PayoutsRoute: PayoutsRoute,
+  ApiPublicCronMiningRoute: ApiPublicCronMiningRoute,
   ApiPublicTelegramWebhookRoute: ApiPublicTelegramWebhookRoute,
 }
 export const routeTree = rootRouteImport

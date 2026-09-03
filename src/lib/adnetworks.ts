@@ -14,7 +14,9 @@ export type AdNet = "int" | "reward" | "giga" | "monetag" | "bitvex";
 
 export type AdResult = { ok: boolean; reason?: "nofill" | "short" | "skip" };
 
-type Win = Window & Record<string, unknown>;
+type Win = Record<string, unknown>;
+
+const W = () => window as unknown as Win;
 
 const loaded = new Map<string, Promise<boolean>>();
 
@@ -36,7 +38,7 @@ function loadScript(key: string, build: () => HTMLScriptElement): Promise<boolea
 /* -------------------------------- Gigapub -------------------------------- */
 
 async function showGigaAd(id: string): Promise<boolean> {
-  const w = window as Win;
+  const w = W();
   if (typeof w["showGiga"] !== "function") {
     await loadScript(`giga:${id}`, () => {
       const s = document.createElement("script");
@@ -44,7 +46,7 @@ async function showGigaAd(id: string): Promise<boolean> {
       return s;
     });
   }
-  const fn = (window as Win)["showGiga"] as ((slot: string) => Promise<unknown>) | undefined;
+  const fn = W()["showGiga"] as ((slot: string) => Promise<unknown>) | undefined;
   if (typeof fn !== "function") return false;
   try {
     await fn("main");
@@ -58,7 +60,7 @@ async function showGigaAd(id: string): Promise<boolean> {
 
 async function showMonetagAd(zone: string): Promise<boolean> {
   const sdk = `show_${zone}`;
-  if (typeof (window as Win)[sdk] !== "function") {
+  if (typeof W()[sdk] !== "function") {
     await loadScript(`monetag:${zone}`, () => {
       const s = document.createElement("script");
       s.src = "//libtl.com/sdk.js";
@@ -67,7 +69,7 @@ async function showMonetagAd(zone: string): Promise<boolean> {
       return s;
     });
   }
-  const fn = (window as Win)[sdk] as (() => Promise<unknown>) | undefined;
+  const fn = W()[sdk] as (() => Promise<unknown>) | undefined;
   if (typeof fn !== "function") return false;
   try {
     await fn();
@@ -82,7 +84,7 @@ async function showMonetagAd(zone: string): Promise<boolean> {
 async function showBitvexAd(zone: string): Promise<boolean> {
   const sdk = `show_${zone}`;
   const pick = () => {
-    const w = window as Win;
+    const w = W();
     const candidates = [
       w[sdk],
       (w["AdsBitvex"] as { show?: unknown } | undefined)?.show,
