@@ -1239,13 +1239,144 @@ export async function adminDeleteCode(code: string) {
   return { ok: true };
 }
 
-export async function adminBroadcast(text: string) {
+export async function adminBroadcast(
+  text: string,
+  opts: { photo?: string; buttons?: { text: string; url: string }[] } = {}
+) {
   const users = await queryDocs<UserDoc>("users", { limit: 1000 });
+  const keyboard: { text: string; url: string }[][] = [];
+  const extra = (opts.buttons ?? []).filter((b) => b.text && b.url);
+  if (extra.length) for (const b of extra) keyboard.push([b]);
+  keyboard.push([btn.miniApp], [btn.community, btn.payment]);
+  const photo = (opts.photo ?? "").trim();
   let sent = 0;
   for (const u of users) {
     if (u.notifications === false) continue;
-    const r = await sendMessage(u.id, `📢 ${text}`, [[btn.miniApp]]);
+    const body = `\ud83d\udce2 ${text}`;
+    const r = photo
+      ? await sendPhoto(u.id, photo, body, keyboard)
+      : await sendMessage(u.id, body, keyboard);
     if (r) sent++;
   }
   return { sent };
+}
+
+/* --------------------------- user audit / search ------------------------- */
+
+export type LedgerAudit = {
+  ledger: number;
+  balance: number;
+  diff: number;
+  ok: boolean;
+  entries: number;
+};
+
+/** Recomputes a user's balance from the transaction ledger. */
+export async function ledgerAudit(userId: string): Promise<LedgerAudit> {
+  const [tx, user] = await Promise.all([
+    queryDocs<{ amount: number }>("transactions", {
+      where: [{ field: "userId", op: "EQUAL", value: userId }],
+      limit: 1000,
+    }),
+    getDoc<UserDoc>(`users/${userId}`),
+  ]);
+  const ledger = tx.reduce((sum, t) => sum + (t.amount ?? 0), 0);
+  const balance = user?.balance ?? 0;
+  const diff = balance - ledger;
+  return { ledger, balance, diff, ok: Math.abs(diff) <= 1, entries: tx.length };
+}
+
+/** Rewrites the stored balance to match the ledger (admin repair action). */
+export async function adminFixBalance(userId: string) {
+  const audit = await ledgerAudit(userId);
+  if (audit.ok) return { ...audit, fixed: false };
+  await setDoc(`users/${userId}`, { balance: Math.max(0, Math.round(audit.ledger)) });
+  return { ...audit, balance: Math.max(0, Math.round(audit.ledger)), diff: 0, ok: true, fixed: true };
+}
+
+export async function adminSearchUsers(query: string) {
+  const q = String(query ?? "").trim().toLowerCase().replace(/^@/, "");
+  const users = await queryDocs<UserDoc>("users", { limit: 1000 });
+  const matches = (q ? users.filter(
+    (u) =>
+      u.id.includes(q) ||
+      (u.username ?? "").toLowerCase().includes(q) ||
+      (u.firstName ?? "").toLowerCase().includes(q) ||
+      (u.wallet ?? "").toLowerCase().includes(q)
+  ) : users.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+  ).slice(0, 30);
+  return matches.map((u) => ({
+    id: u.id,
+    name: label(u),
+    balance: u.balance ?? 0,
+    refs: u.refCount ?? 0,
+    suspended: !!u.suspended,
+    createdAt: u.createdAt ?? 0,
+  }));
+}
+
+/** Full activity dossier for one user, including the balance audit. */
+export async function adminUserDetail(userId: string) {
+  const user = await getDoc<UserDoc>(`users/${userId}`);
+  if (!user) throw new Error("User not found");
+  const [audit, tx, withdrawals, refs, taskClaims, siteClaims] = await Promise.all([
+    ledgerAudit(userId),
+    listTransactions(user),
+    listWithdrawals(userId),
+    queryDocs<{ status: string; fake: boolean; name: string; createdAt: number }>("referrals", {
+      where: [{ field: "referrer", op: "EQUAL", value: userId }],
+      limit: 200,
+    }),
+    queryDocs<{ taskId: string; reward: number; at: number }>("taskClaims", {
+      where: [{ field: "userId", op: "EQUAL", value: userId }],
+      limit: 300,
+    }),
+    queryDocs<{ siteId: string; at: number }>("siteClaims", {
+      where: [{ field: "userId", op: "EQUAL", value: userId }],
+      limit: 300,
+    }),
+  ]);
+  const today = utcDayKey();
+  return {
+    user: {
+      id: user.id,
+      name: label(user),
+      username: user.username ?? "",
+      balance: user.balance ?? 0,
+      totalEarned: user.totalEarned ?? 0,
+      suspended: !!user.suspended,
+      suspendReason: user.suspendReason ?? "",
+      wallet: user.wallet ?? "",
+      ip: user.ip ?? "",
+      device: user.device ?? "",
+      refCount: user.refCount ?? 0,
+      refActive: user.refActive ?? 0,
+      refEarnPending: user.refEarnPending ?? 0,
+      refEarnClaimed: user.refEarnClaimed ?? 0,
+      adsTotal: user.adsTotal ?? 0,
+      adsToday: user.adsDayKey === today ? (user.adsToday ?? 0) : 0,
+      withdrawCount: user.withdrawCount ?? 0,
+      totalPaidUsd: user.totalPaidUsd ?? 0,
+      dailyStreak: user.dailyStreak ?? 0,
+      createdAt: user.createdAt ?? 0,
+      lastSeen: user.lastSeen ?? 0,
+    },
+    audit,
+    transactions: tx.slice(0, 60),
+    withdrawals,
+    referrals: refs
+      .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+      .map((r) => ({
+        name: r.name ?? "User",
+        status: r.fake ? "fake" : (r.status ?? "pending"),
+        at: r.createdAt ?? 0,
+      })),
+    counts: {
+      tasks: taskClaims.length,
+      sites: siteClaims.length,
+      transactions: audit.entries,
+      withdrawals: withdrawals.length,
+      approvedWithdrawals: withdrawals.filter((w) => w.status === "approved").length,
+    },
+  };
 }
