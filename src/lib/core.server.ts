@@ -366,9 +366,14 @@ export async function startMining(user: UserDoc, cfg: Cfg) {
   assertActive(user);
   const state = miningState(user, cfg);
   if (state.status !== "idle") throw new Error("⛏ Mining is already in progress.");
-  await setDoc(`users/${user.id}`, { miningStart: Date.now(), miningClaimed: false });
+  await setDoc(`users/${user.id}`, {
+    miningStart: Date.now(),
+    miningClaimed: false,
+    miningNotified: false,
+  });
   user.miningStart = Date.now();
   user.miningClaimed = false;
+  user.miningNotified = false;
   return miningState(user, cfg);
 }
 
@@ -376,9 +381,10 @@ export async function claimMining(user: UserDoc, cfg: Cfg) {
   assertActive(user);
   const state = miningState(user, cfg);
   if (state.status !== "claimable") throw new Error("⏳ Mining is not finished yet.");
-  await setDoc(`users/${user.id}`, { miningStart: 0, miningClaimed: true });
+  await setDoc(`users/${user.id}`, { miningStart: 0, miningClaimed: true, miningNotified: true });
   user.miningStart = 0;
   user.miningClaimed = true;
+  user.miningNotified = true;
   await credit(user, state.reward, "mining", "Mining claim");
   if (user.notifications !== false) {
     await sendMessage(
@@ -388,6 +394,31 @@ export async function claimMining(user: UserDoc, cfg: Cfg) {
     );
   }
   return { reward: state.reward, balance: user.balance };
+}
+
+/**
+ * Sends the "mining finished" bot notification the moment a session ends, even
+ * when the user is not inside the mini app. Called by the cron endpoint.
+ */
+export async function notifyFinishedMining() {
+  const cfg = await getCfg();
+  const duration = Math.max(1, cfg.miningHours) * 3600 * 1000;
+  const users = await queryDocs<UserDoc>("users", { limit: 1000 });
+  let notified = 0;
+  for (const u of users) {
+    if (u.suspended || u.notifications === false) continue;
+    if (!u.miningStart || u.miningClaimed || u.miningNotified) continue;
+    if (Date.now() < u.miningStart + duration) continue;
+    const reward = cfg.miningReward * cfg.miningHours;
+    const sent = await sendMessage(
+      u.id,
+      `\u26cf <b>Mining complete!</b>\n\n\u2705 Your session finished and <b>${reward} ${APP.tokenName}</b> is waiting.\n\ud83c\udf81 Open the app and tap <b>Claim Mining Reward</b> to collect it, then start a new session.`,
+      [[btn.miniApp]]
+    );
+    await setDoc(`users/${u.id}`, { miningNotified: true });
+    if (sent) notified += 1;
+  }
+  return notified;
 }
 
 /* ------------------------------ daily bonus ---------------------------- */
