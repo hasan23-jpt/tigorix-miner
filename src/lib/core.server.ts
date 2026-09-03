@@ -1,7 +1,7 @@
 /** Tigorix business logic. Server only — never imported by the browser. */
 import { APP, DAILY_REWARDS, utcDayKey } from "./config";
 import { getDoc, setDoc, deleteDoc, queryDocs } from "./fsdb.server";
-import { btn, isChannelMember, notifyAdmin, sendMessage } from "./bot.server";
+import { btn, isChannelMember, notifyAdmin, sendMessage, sendPhoto } from "./bot.server";
 import type { AuthUser } from "./bot.server";
 
 export type Cfg = {
