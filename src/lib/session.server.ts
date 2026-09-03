@@ -32,6 +32,10 @@ export async function session(initData: string): Promise<{
     });
     user = created.user;
   }
+  if (cfg.maintenance && !isAdmin(auth.id))
+    throw new Error(
+      "🛠 Tigorix is under maintenance right now. Please come back in a little while — your balance is safe."
+    );
   return { auth, user, cfg };
 }
 

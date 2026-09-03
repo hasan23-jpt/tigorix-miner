@@ -1098,7 +1098,26 @@ export async function adminOverview() {
         suspended: !!u.suspended,
         createdAt: u.createdAt ?? 0,
       })),
-    withdrawals: withdrawals.sort((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(0, 100),
+    withdrawals: await Promise.all(
+      withdrawals
+        .sort((a, b) => (b.at ?? 0) - (a.at ?? 0))
+        .slice(0, 100)
+        .map(async (w) => {
+          if (w.status !== "pending") return { ...w, audit: null };
+          const audit = await ledgerAudit(w.userId);
+          const u = users.find((x) => x.id === w.userId);
+          return {
+            ...w,
+            audit: {
+              ...audit,
+              adsTotal: u?.adsTotal ?? 0,
+              refs: u?.refCount ?? 0,
+              refActive: u?.refActive ?? 0,
+              withdrawCount: u?.withdrawCount ?? 0,
+            },
+          };
+        })
+    ),
     tasks,
     codes,
     sites,
