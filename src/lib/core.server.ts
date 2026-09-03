@@ -610,7 +610,53 @@ export async function adminDeleteSite(id: string) {
 
 /* ------------------------------ ads / referrals ------------------------ */
 
-export type AdNetwork = "int" | "reward";
+export type AdNetwork = "int" | "reward" | "giga" | "monetag" | "bitvex";
+
+const AD_NETWORKS: Record<
+  AdNetwork,
+  { label: string; reward: keyof Cfg; cap: keyof Cfg; block: keyof Cfg }
+> = {
+  int: {
+    label: "Adsgram interstitial",
+    reward: "intAdReward",
+    cap: "intAdsDailyCap",
+    block: "adsgramIntBlockId",
+  },
+  reward: {
+    label: "Adsgram rewarded",
+    reward: "rewardAdReward",
+    cap: "rewardAdsDailyCap",
+    block: "adsgramRewardBlockId",
+  },
+  giga: {
+    label: "Gigapub",
+    reward: "gigaAdReward",
+    cap: "gigaAdsDailyCap",
+    block: "gigaBlockId",
+  },
+  monetag: {
+    label: "Monetag",
+    reward: "monetagAdReward",
+    cap: "monetagAdsDailyCap",
+    block: "monetagBlockId",
+  },
+  bitvex: {
+    label: "Adsbitvex",
+    reward: "bitvexAdReward",
+    cap: "bitvexAdsDailyCap",
+    block: "bitvexBlockId",
+  },
+};
+
+export function adNetworkKeys(net: AdNetwork) {
+  return { dayKey: `${net}AdsDayKey` as const, count: `${net}AdsToday` as const };
+}
+
+function netCount(user: UserDoc, net: AdNetwork) {
+  const { dayKey, count } = adNetworkKeys(net);
+  const u = user as unknown as Record<string, unknown>;
+  return String(u[dayKey] ?? "") === utcDayKey() ? Number(u[count] ?? 0) : 0;
+}
 
 /**
  * Rewarded ad view from an ad network block. Each network has its own daily
@@ -618,43 +664,35 @@ export type AdNetwork = "int" | "reward";
  */
 export async function recordAdView(user: UserDoc, cfg: Cfg, network: AdNetwork) {
   assertActive(user);
+  const meta = AD_NETWORKS[network];
+  if (!meta) throw new Error("Unknown ad network");
   const today = utcDayKey();
-  const isInt = network === "int";
-  const cap = isInt ? cfg.intAdsDailyCap : cfg.rewardAdsDailyCap;
-  const reward = Math.max(0, isInt ? cfg.intAdReward : cfg.rewardAdReward);
-  const dayKey = isInt ? user.intAdsDayKey : user.rewardAdsDayKey;
-  const seenToday = dayKey === today ? (isInt ? user.intAdsToday : user.rewardAdsToday) || 0 : 0;
+  const cap = Math.max(0, Number(cfg[meta.cap] ?? 0));
+  const reward = Math.max(0, Number(cfg[meta.reward] ?? 0));
+  const seenToday = netCount(user, network);
   if (seenToday >= cap)
     throw new Error(
       `📺 Daily limit reached for this ad block (${cap}). Come back after 00:00 UTC.`
     );
 
   const adsTodayTotal = user.adsDayKey === today ? (user.adsToday ?? 0) : 0;
+  const { dayKey, count } = adNetworkKeys(network);
   const patch: Record<string, unknown> = {
     adsDayKey: today,
     adsToday: adsTodayTotal + 1,
     adsTotal: (user.adsTotal ?? 0) + 1,
+    [dayKey]: today,
+    [count]: seenToday + 1,
   };
-  if (isInt) {
-    patch["intAdsDayKey"] = today;
-    patch["intAdsToday"] = seenToday + 1;
-  } else {
-    patch["rewardAdsDayKey"] = today;
-    patch["rewardAdsToday"] = seenToday + 1;
-  }
   await setDoc(`users/${user.id}`, patch);
+  const mutable = user as unknown as Record<string, unknown>;
+  mutable[dayKey] = today;
+  mutable[count] = seenToday + 1;
   user.adsDayKey = today;
   user.adsToday = adsTodayTotal + 1;
   user.adsTotal = (user.adsTotal ?? 0) + 1;
-  if (isInt) {
-    user.intAdsDayKey = today;
-    user.intAdsToday = seenToday + 1;
-  } else {
-    user.rewardAdsDayKey = today;
-    user.rewardAdsToday = seenToday + 1;
-  }
 
-  if (reward > 0) await credit(user, reward, "ad", `${isInt ? "Interstitial" : "Rewarded"} ad view`);
+  if (reward > 0) await credit(user, reward, "ad", `${meta.label} ad view`);
   await advanceReferral(user, cfg);
   return {
     network,
@@ -669,8 +707,9 @@ export async function recordAdView(user: UserDoc, cfg: Cfg, network: AdNetwork) 
 
 /**
  * Referral milestones are driven by the invited friend's ad views:
- * day 1 → cfg.day1Ads views, day 2 → cfg.day2Ads views. Each stage pings the
- * referrer through the bot.
+ * stage 1 ("half verified") after cfg.day1Ads views, stage 2 ("verified")
+ * after a further cfg.day2Ads views. Each stage pays the referrer and pings
+ * them through the bot.
  */
 export async function advanceReferral(user: UserDoc, cfg: Cfg) {
   const ref = await getDoc<{
@@ -684,12 +723,13 @@ export async function advanceReferral(user: UserDoc, cfg: Cfg) {
     createdAt: number;
   }>(`referrals/${user.id}`);
   if (!ref || ref.fake) return;
-  const dayIndex = Math.floor((Date.now() - (ref.createdAt ?? 0)) / 86400000) + 1;
+  if (ref.day1Paid && ref.day2Paid) return;
   const patch: Record<string, unknown> = {};
-  if (dayIndex <= 1) patch["day1Ads"] = (ref.day1Ads ?? 0) + 1;
-  else if (dayIndex === 2) patch["day2Ads"] = (ref.day2Ads ?? 0) + 1;
+  if (!ref.day1Paid) patch["day1Ads"] = (ref.day1Ads ?? 0) + 1;
+  else patch["day2Ads"] = (ref.day2Ads ?? 0) + 1;
   const day1 = Number(patch["day1Ads"] ?? ref.day1Ads ?? 0);
   const day2 = Number(patch["day2Ads"] ?? ref.day2Ads ?? 0);
+
 
   let bonus = 0;
   if (!ref.day1Paid && day1 >= cfg.day1Ads) {
