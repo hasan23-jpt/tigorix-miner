@@ -111,55 +111,7 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
           </div>
         </Card>
       ) : tab === "users" ? (
-        <Card>
-          <SectionTitle icon="👥" title="Users" />
-          <div className="space-y-2">
-            {data.users.map((u) => (
-              <div key={u.id} className="rounded-xl border border-border bg-background/40 p-3">
-                <div className="flex items-center gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-bold">{u.name}</p>
-                    <p className="text-[10px] text-muted-foreground">
-                      {u.id} · {fmt(u.balance)} {APP.tokenName} · {u.refs} refs
-                    </p>
-                  </div>
-                  <Pill tone={u.suspended ? "danger" : "success"}>
-                    {u.suspended ? "suspended" : "active"}
-                  </Pill>
-                </div>
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <GhostButton
-                    disabled={busy}
-                    onClick={() => {
-                      const v = window.prompt("Set balance", String(u.balance));
-                      if (v === null) return;
-                      void run(
-                        () => adminUpdateUser({ data: { ...admin, userId: u.id, balance: Number(v) } }),
-                        () => "✅ Balance updated"
-                      ).then(() => void refetch());
-                    }}
-                  >
-                    🪙 Balance
-                  </GhostButton>
-                  <GhostButton
-                    disabled={busy}
-                    onClick={() =>
-                      void run(
-                        () =>
-                          adminUpdateUser({
-                            data: { ...admin, userId: u.id, suspended: !u.suspended },
-                          }),
-                        () => (u.suspended ? "✅ Unsuspended" : "🚫 Suspended")
-                      ).then(() => void refetch())
-                    }
-                  >
-                    {u.suspended ? "✅ Unsuspend" : "🚫 Suspend"}
-                  </GhostButton>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
+        <UsersAdmin admin={admin} onDone={() => void refetch()} />
       ) : tab === "tasks" ? (
         <TasksAdmin admin={admin} tasks={data.tasks} onDone={() => void refetch()} />
       ) : tab === "codes" ? (
@@ -191,16 +143,57 @@ function BackBtn({ onClick }: { onClick: () => void }) {
 function BroadcastForm({ admin }: { admin: AdminAuth }) {
   const { run, busy } = useAppState();
   const [text, setText] = useState("");
+  const [photo, setPhoto] = useState("");
+  const [btnText, setBtnText] = useState("");
+  const [btnUrl, setBtnUrl] = useState("");
   return (
     <div className="space-y-2">
+      <Guide>
+        Messages always include the Open Mini App, Community and Payments buttons. Add an image URL
+        to send it as a photo post, and an extra custom button if you need one.
+      </Guide>
       <Field label="Message" value={text} onChange={(e) => setText(e.target.value)} />
+      <Field
+        label="Image URL (optional)"
+        placeholder="https://…/banner.png"
+        value={photo}
+        onChange={(e) => setPhoto(e.target.value)}
+      />
+      <div className="grid grid-cols-2 gap-2">
+        <Field
+          label="Extra button text"
+          value={btnText}
+          onChange={(e) => setBtnText(e.target.value)}
+        />
+        <Field
+          label="Extra button URL"
+          value={btnUrl}
+          onChange={(e) => setBtnUrl(e.target.value)}
+        />
+      </div>
       <GoldButton
         disabled={busy || !text.trim()}
         onClick={() =>
           void run(
-            () => adminSendBroadcast({ data: { ...admin, text } }),
+            () =>
+              adminSendBroadcast({
+                data: {
+                  ...admin,
+                  text,
+                  photo: photo.trim(),
+                  buttons:
+                    btnText.trim() && btnUrl.trim()
+                      ? [{ text: btnText.trim(), url: btnUrl.trim() }]
+                      : [],
+                },
+              }),
             (r) => `📢 Sent to ${r?.sent ?? 0} users`
-          ).then(() => setText(""))
+          ).then(() => {
+            setText("");
+            setPhoto("");
+            setBtnText("");
+            setBtnUrl("");
+          })
         }
       >
         📢 Send Broadcast
@@ -223,6 +216,17 @@ function WithdrawRow({
     netUsd: number;
     wallet: string;
     status: string;
+    audit?: {
+      ledger: number;
+      balance: number;
+      diff: number;
+      ok: boolean;
+      entries: number;
+      adsTotal: number;
+      refs: number;
+      refActive: number;
+      withdrawCount: number;
+    } | null;
   };
   admin: AdminAuth;
   onDone: () => void;
@@ -242,6 +246,27 @@ function WithdrawRow({
         🪙 {fmt(w.tokens)} · 🧾 ${w.feeUsd.toFixed(4)} · 💵 ${w.netUsd.toFixed(4)}
       </p>
       <p className="truncate text-[10px] text-muted-foreground">💳 {w.wallet}</p>
+      {w.audit && (
+        <div
+          className={`mt-2 rounded-lg border p-2 text-[10px] ${
+            w.audit.ok
+              ? "border-success/40 bg-success/10 text-success"
+              : "border-destructive/40 bg-destructive/10 text-destructive"
+          }`}
+        >
+          <p className="font-bold">
+            {w.audit.ok ? "✅ Balance matches activity" : "🚨 Balance mismatch — check before paying"}
+          </p>
+          <p className="mt-0.5 text-muted-foreground">
+            Ledger {fmt(w.audit.ledger)} · Balance {fmt(w.audit.balance)} · Diff{" "}
+            {fmt(Math.abs(w.audit.diff))} · {w.audit.entries} entries
+          </p>
+          <p className="text-muted-foreground">
+            📺 {fmt(w.audit.adsTotal)} ads · 👥 {fmt(w.audit.refs)} refs ({fmt(w.audit.refActive)}{" "}
+            active) · 💸 {fmt(w.audit.withdrawCount)} withdrawals
+          </p>
+        </div>
+      )}
       {w.status === "pending" && (
         <div className="mt-2 grid grid-cols-2 gap-2">
           <GoldButton
