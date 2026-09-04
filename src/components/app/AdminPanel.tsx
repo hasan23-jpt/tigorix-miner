@@ -15,6 +15,9 @@ import {
   adminSiteSave,
   adminUpdateUser,
   adminWithdrawDecision,
+  adminFindUsers,
+  adminUserInfo,
+  adminRepairBalance,
 } from "@/lib/api.functions";
 import { useAppState } from "./useApp";
 import { Card, Field, GhostButton, GoldButton, Guide, Pill, SectionTitle, Stat } from "./ui";
@@ -108,55 +111,7 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
           </div>
         </Card>
       ) : tab === "users" ? (
-        <Card>
-          <SectionTitle icon="👥" title="Users" />
-          <div className="space-y-2">
-            {data.users.map((u) => (
-              <div key={u.id} className="rounded-xl border border-border bg-background/40 p-3">
-                <div className="flex items-center gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-bold">{u.name}</p>
-                    <p className="text-[10px] text-muted-foreground">
-                      {u.id} · {fmt(u.balance)} {APP.tokenName} · {u.refs} refs
-                    </p>
-                  </div>
-                  <Pill tone={u.suspended ? "danger" : "success"}>
-                    {u.suspended ? "suspended" : "active"}
-                  </Pill>
-                </div>
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <GhostButton
-                    disabled={busy}
-                    onClick={() => {
-                      const v = window.prompt("Set balance", String(u.balance));
-                      if (v === null) return;
-                      void run(
-                        () => adminUpdateUser({ data: { ...admin, userId: u.id, balance: Number(v) } }),
-                        () => "✅ Balance updated"
-                      ).then(() => void refetch());
-                    }}
-                  >
-                    🪙 Balance
-                  </GhostButton>
-                  <GhostButton
-                    disabled={busy}
-                    onClick={() =>
-                      void run(
-                        () =>
-                          adminUpdateUser({
-                            data: { ...admin, userId: u.id, suspended: !u.suspended },
-                          }),
-                        () => (u.suspended ? "✅ Unsuspended" : "🚫 Suspended")
-                      ).then(() => void refetch())
-                    }
-                  >
-                    {u.suspended ? "✅ Unsuspend" : "🚫 Suspend"}
-                  </GhostButton>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
+        <UsersAdmin admin={admin} onDone={() => void refetch()} />
       ) : tab === "tasks" ? (
         <TasksAdmin admin={admin} tasks={data.tasks} onDone={() => void refetch()} />
       ) : tab === "codes" ? (
@@ -188,16 +143,57 @@ function BackBtn({ onClick }: { onClick: () => void }) {
 function BroadcastForm({ admin }: { admin: AdminAuth }) {
   const { run, busy } = useAppState();
   const [text, setText] = useState("");
+  const [photo, setPhoto] = useState("");
+  const [btnText, setBtnText] = useState("");
+  const [btnUrl, setBtnUrl] = useState("");
   return (
     <div className="space-y-2">
+      <Guide>
+        Messages always include the Open Mini App, Community and Payments buttons. Add an image URL
+        to send it as a photo post, and an extra custom button if you need one.
+      </Guide>
       <Field label="Message" value={text} onChange={(e) => setText(e.target.value)} />
+      <Field
+        label="Image URL (optional)"
+        placeholder="https://…/banner.png"
+        value={photo}
+        onChange={(e) => setPhoto(e.target.value)}
+      />
+      <div className="grid grid-cols-2 gap-2">
+        <Field
+          label="Extra button text"
+          value={btnText}
+          onChange={(e) => setBtnText(e.target.value)}
+        />
+        <Field
+          label="Extra button URL"
+          value={btnUrl}
+          onChange={(e) => setBtnUrl(e.target.value)}
+        />
+      </div>
       <GoldButton
         disabled={busy || !text.trim()}
         onClick={() =>
           void run(
-            () => adminSendBroadcast({ data: { ...admin, text } }),
+            () =>
+              adminSendBroadcast({
+                data: {
+                  ...admin,
+                  text,
+                  photo: photo.trim(),
+                  buttons:
+                    btnText.trim() && btnUrl.trim()
+                      ? [{ text: btnText.trim(), url: btnUrl.trim() }]
+                      : [],
+                },
+              }),
             (r) => `📢 Sent to ${r?.sent ?? 0} users`
-          ).then(() => setText(""))
+          ).then(() => {
+            setText("");
+            setPhoto("");
+            setBtnText("");
+            setBtnUrl("");
+          })
         }
       >
         📢 Send Broadcast
@@ -220,6 +216,17 @@ function WithdrawRow({
     netUsd: number;
     wallet: string;
     status: string;
+    audit?: {
+      ledger: number;
+      balance: number;
+      diff: number;
+      ok: boolean;
+      entries: number;
+      adsTotal: number;
+      refs: number;
+      refActive: number;
+      withdrawCount: number;
+    } | null;
   };
   admin: AdminAuth;
   onDone: () => void;
@@ -239,6 +246,27 @@ function WithdrawRow({
         🪙 {fmt(w.tokens)} · 🧾 ${w.feeUsd.toFixed(4)} · 💵 ${w.netUsd.toFixed(4)}
       </p>
       <p className="truncate text-[10px] text-muted-foreground">💳 {w.wallet}</p>
+      {w.audit && (
+        <div
+          className={`mt-2 rounded-lg border p-2 text-[10px] ${
+            w.audit.ok
+              ? "border-success/40 bg-success/10 text-success"
+              : "border-destructive/40 bg-destructive/10 text-destructive"
+          }`}
+        >
+          <p className="font-bold">
+            {w.audit.ok ? "✅ Balance matches activity" : "🚨 Balance mismatch — check before paying"}
+          </p>
+          <p className="mt-0.5 text-muted-foreground">
+            Ledger {fmt(w.audit.ledger)} · Balance {fmt(w.audit.balance)} · Diff{" "}
+            {fmt(Math.abs(w.audit.diff))} · {w.audit.entries} entries
+          </p>
+          <p className="text-muted-foreground">
+            📺 {fmt(w.audit.adsTotal)} ads · 👥 {fmt(w.audit.refs)} refs ({fmt(w.audit.refActive)}{" "}
+            active) · 💸 {fmt(w.audit.withdrawCount)} withdrawals
+          </p>
+        </div>
+      )}
       {w.status === "pending" && (
         <div className="mt-2 grid grid-cols-2 gap-2">
           <GoldButton
@@ -576,6 +604,9 @@ function SettingsAdmin({
 const AD_TEXT_FIELDS = [
   ["adsgramIntBlockId", "Adsgram interstitial block ID"],
   ["adsgramRewardBlockId", "Adsgram rewarded block ID"],
+  ["gigaBlockId", "Gigapub project ID"],
+  ["monetagBlockId", "Monetag zone ID"],
+  ["bitvexBlockId", "Adsbitvex zone ID"],
 ] as const;
 
 const AD_NUMBER_FIELDS = [
@@ -583,6 +614,12 @@ const AD_NUMBER_FIELDS = [
   ["intAdsDailyCap", "Interstitial daily ad limit"],
   ["rewardAdReward", "Rewarded block reward (tokens per ad)"],
   ["rewardAdsDailyCap", "Rewarded block daily ad limit"],
+  ["gigaAdReward", "Gigapub reward (tokens per ad)"],
+  ["gigaAdsDailyCap", "Gigapub daily ad limit"],
+  ["monetagAdReward", "Monetag reward (tokens per ad)"],
+  ["monetagAdsDailyCap", "Monetag daily ad limit"],
+  ["bitvexAdReward", "Adsbitvex reward (tokens per ad)"],
+  ["bitvexAdsDailyCap", "Adsbitvex daily ad limit"],
   ["withdrawAdsRequired", "Daily ads required to withdraw"],
   ["withdrawMinRefs", "Valid referrals required to withdraw"],
   ["withdrawCooldownHours", "Withdrawal cooldown (hours)"],
@@ -610,6 +647,7 @@ function AdsAdmin({
       [...AD_TEXT_FIELDS, ...AD_NUMBER_FIELDS].map(([k]) => [k, String(cfg[k] ?? "")])
     )
   );
+  const [autoAd, setAutoAd] = useState(cfg["autoIntAd"] !== false);
   const [site, setSite] = useState<{ id?: string; title: string; url: string; reward: string }>({
     title: "",
     url: "",
@@ -619,7 +657,11 @@ function AdsAdmin({
   return (
     <>
       <Card>
-        <SectionTitle icon="📺" title="Ad Networks" action={<Pill tone="info">Adsgram</Pill>} />
+        <SectionTitle
+          icon="📺"
+          title="Ad Networks"
+          action={<Pill tone="info">Adsgram · Gigapub · Monetag · Adsbitvex</Pill>}
+        />
         <Guide>
           Set the Adsgram block IDs and rewards. The interstitial block gates mining, reward codes and
           claims; the rewarded block pays per view. Changes apply instantly.
@@ -642,10 +684,19 @@ function AdsAdmin({
               onChange={(e) => setForm({ ...form, [k]: e.target.value })}
             />
           ))}
+          <label className="flex items-center gap-2 rounded-xl border border-border bg-background/40 p-3 text-xs font-bold">
+            <input
+              type="checkbox"
+              checked={autoAd}
+              onChange={(e) => setAutoAd(e.target.checked)}
+              className="size-4 accent-[hsl(var(--primary))]"
+            />
+            Show one interstitial ad on app open / Home visit
+          </label>
           <GoldButton
             disabled={busy}
             onClick={() => {
-              const patch: Record<string, string | number> = {};
+              const patch: Record<string, string | number | boolean> = { autoIntAd: autoAd };
               for (const [k] of AD_TEXT_FIELDS) patch[k] = (form[k] ?? "").trim();
               for (const [k] of AD_NUMBER_FIELDS) {
                 const v = Number(form[k]);
@@ -775,5 +826,263 @@ function AdsAdmin({
         </div>
       </Card>
     </>
+  );
+}
+
+/* ---------------------------------- users -------------------------------- */
+
+function UsersAdmin({ admin, onDone }: { admin: AdminAuth; onDone: () => void }) {
+  const { run, busy } = useAppState();
+  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState("");
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const { data: users, refetch: refetchList } = useQuery({
+    queryKey: ["admin-users", search],
+    queryFn: () => adminFindUsers({ data: { ...admin, query: search } }),
+  });
+
+  const { data: detail, refetch: refetchDetail } = useQuery({
+    queryKey: ["admin-user", openId],
+    enabled: !!openId,
+    queryFn: () => adminUserInfo({ data: { ...admin, userId: openId! } }),
+  });
+
+  const reload = () => {
+    void refetchList();
+    if (openId) void refetchDetail();
+    onDone();
+  };
+
+  if (openId && detail) {
+    const u = detail.user;
+    const a = detail.audit;
+    return (
+      <div className="space-y-4">
+        <button
+          onClick={() => setOpenId(null)}
+          className="flex items-center gap-1.5 text-xs font-bold text-primary"
+        >
+          <ArrowLeft className="size-4" /> Back to user list
+        </button>
+
+        <Card>
+          <SectionTitle
+            icon="👤"
+            title={u.name}
+            action={<Pill tone={u.suspended ? "danger" : "success"}>{u.suspended ? "suspended" : "active"}</Pill>}
+          />
+          <p className="text-[11px] text-muted-foreground">
+            🆔 {u.id} · joined {new Date(u.createdAt).toISOString().slice(0, 10)} · last seen{" "}
+            {u.lastSeen ? new Date(u.lastSeen).toISOString().slice(5, 16).replace("T", " ") : "—"}
+          </p>
+          {u.suspended && u.suspendReason && (
+            <p className="mt-1 text-[11px] text-destructive">⚠️ {u.suspendReason}</p>
+          )}
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <Stat emoji="🪙" label="Balance" value={fmt(u.balance)} />
+            <Stat emoji="📈" label="Total earned" value={fmt(u.totalEarned)} />
+            <Stat emoji="📺" label="Ads (today/total)" value={`${fmt(u.adsToday)}/${fmt(u.adsTotal)}`} />
+            <Stat emoji="👥" label="Refs (active)" value={`${fmt(u.refCount)} (${fmt(u.refActive)})`} />
+            <Stat emoji="💸" label="Withdrawals" value={`${fmt(u.withdrawCount)}`} />
+            <Stat emoji="💵" label="Paid out" value={`$${u.totalPaidUsd.toFixed(4)}`} />
+            <Stat emoji="🎁" label="Ref pending" value={fmt(u.refEarnPending)} />
+            <Stat emoji="🏦" label="Ref claimed" value={fmt(u.refEarnClaimed)} />
+          </div>
+          <p className="mt-2 truncate text-[10px] text-muted-foreground">
+            💳 {u.wallet || "no wallet"} · 🌐 {u.ip || "—"} · 📱 {u.device || "—"}
+          </p>
+        </Card>
+
+        <Card>
+          <SectionTitle
+            icon="🧮"
+            title="Balance audit"
+            action={<Pill tone={a.ok ? "success" : "danger"}>{a.ok ? "correct" : "mismatch"}</Pill>}
+          />
+          <p className="text-[11px] text-muted-foreground">
+            Activity ledger: <b className="text-foreground">{fmt(a.ledger)}</b> · stored balance:{" "}
+            <b className="text-foreground">{fmt(a.balance)}</b> · difference:{" "}
+            <b className={a.ok ? "text-success" : "text-destructive"}>{fmt(Math.abs(a.diff))}</b> ·{" "}
+            {a.entries} ledger entries
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            ✅ {detail.counts.tasks} tasks · 🌐 {detail.counts.sites} site visits · 💸{" "}
+            {detail.counts.approvedWithdrawals}/{detail.counts.withdrawals} withdrawals approved
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <GhostButton
+              disabled={busy || a.ok}
+              onClick={() =>
+                void run(
+                  () => adminRepairBalance({ data: { ...admin, userId: u.id } }),
+                  () => "✅ Balance rebuilt from activity"
+                ).then(reload)
+              }
+            >
+              🧮 Fix balance
+            </GhostButton>
+            <GhostButton
+              disabled={busy}
+              onClick={() => {
+                const v = window.prompt("Set balance", String(u.balance));
+                if (v === null) return;
+                void run(
+                  () => adminUpdateUser({ data: { ...admin, userId: u.id, balance: Number(v) } }),
+                  () => "✅ Balance updated"
+                ).then(reload);
+              }}
+            >
+              🪙 Set balance
+            </GhostButton>
+            <GhostButton
+              disabled={busy}
+              onClick={() =>
+                void run(
+                  () =>
+                    adminUpdateUser({
+                      data: { ...admin, userId: u.id, suspended: !u.suspended },
+                    }),
+                  () => (u.suspended ? "✅ Unsuspended" : "🚫 Suspended")
+                ).then(reload)
+              }
+            >
+              {u.suspended ? "✅ Unsuspend" : "🚫 Suspend"}
+            </GhostButton>
+          </div>
+        </Card>
+
+        <Card>
+          <SectionTitle icon="🧾" title="Activity history" />
+          <div className="space-y-1.5">
+            {detail.transactions.map((t, i) => (
+              <div
+                key={`${t.at}-${i}`}
+                className="flex items-center justify-between rounded-lg border border-border bg-background/40 px-3 py-2 text-[11px]"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-bold">
+                    {t.type} {t.note ? `· ${t.note}` : ""}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {new Date(t.at).toISOString().slice(0, 16).replace("T", " ")} UTC
+                  </p>
+                </div>
+                <span className={t.amount >= 0 ? "font-black text-success" : "font-black text-destructive"}>
+                  {t.amount >= 0 ? "+" : ""}
+                  {fmt(t.amount)}
+                </span>
+              </div>
+            ))}
+            {!detail.transactions.length && (
+              <p className="py-3 text-center text-[11px] text-muted-foreground">No activity yet.</p>
+            )}
+          </div>
+        </Card>
+
+        <Card>
+          <SectionTitle icon="💸" title="Withdrawals" />
+          <div className="space-y-1.5">
+            {detail.withdrawals.map((w) => (
+              <div
+                key={w.id}
+                className="flex items-center justify-between rounded-lg border border-border bg-background/40 px-3 py-2 text-[11px]"
+              >
+                <div>
+                  <p className="font-bold">
+                    #{w.number} · {fmt(w.tokens)} {APP.tokenName}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    ${w.netUsd.toFixed(4)} net ·{" "}
+                    {new Date(w.at).toISOString().slice(0, 16).replace("T", " ")} UTC
+                  </p>
+                </div>
+                <Pill tone={w.status === "approved" ? "success" : w.status === "rejected" ? "danger" : "warn"}>
+                  {w.status}
+                </Pill>
+              </div>
+            ))}
+            {!detail.withdrawals.length && (
+              <p className="py-3 text-center text-[11px] text-muted-foreground">No withdrawals.</p>
+            )}
+          </div>
+        </Card>
+
+        <Card>
+          <SectionTitle icon="👥" title="Referrals" />
+          <div className="space-y-1.5">
+            {detail.referrals.map((r, i) => (
+              <div
+                key={`${r.name}-${i}`}
+                className="flex items-center justify-between rounded-lg border border-border bg-background/40 px-3 py-2 text-[11px]"
+              >
+                <span className="font-bold">{r.name}</span>
+                <Pill
+                  tone={
+                    r.status === "verified"
+                      ? "success"
+                      : r.status === "mid"
+                        ? "info"
+                        : r.status === "fake"
+                          ? "danger"
+                          : "warn"
+                  }
+                >
+                  {r.status === "mid" ? "half verified" : r.status}
+                </Pill>
+              </div>
+            ))}
+            {!detail.referrals.length && (
+              <p className="py-3 text-center text-[11px] text-muted-foreground">No referrals.</p>
+            )}
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <Card>
+      <SectionTitle icon="👥" title="Users" action={<Pill>{users?.length ?? 0} shown</Pill>} />
+      <Guide>
+        Search by Telegram ID, username, name or wallet address. Open a user to see the full
+        activity history and whether their balance matches their activity.
+      </Guide>
+      <div className="mb-3 grid grid-cols-[1fr_auto] gap-2">
+        <Field
+          label="Search user"
+          placeholder="@username, 5419054691 or 0x…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <div className="self-end">
+          <GoldButton onClick={() => setSearch(query.trim())}>🔍 Search</GoldButton>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {(users ?? []).map((u) => (
+          <button
+            key={u.id}
+            onClick={() => setOpenId(u.id)}
+            className="w-full rounded-xl border border-border bg-background/40 p-3 text-left"
+          >
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-bold">{u.name}</p>
+                <p className="text-[10px] text-muted-foreground">
+                  {u.id} · {fmt(u.balance)} {APP.tokenName} · {u.refs} refs
+                </p>
+              </div>
+              <Pill tone={u.suspended ? "danger" : "success"}>
+                {u.suspended ? "suspended" : "active"}
+              </Pill>
+            </div>
+          </button>
+        ))}
+        {users && !users.length && (
+          <p className="py-4 text-center text-xs text-muted-foreground">No users found.</p>
+        )}
+      </div>
+    </Card>
   );
 }

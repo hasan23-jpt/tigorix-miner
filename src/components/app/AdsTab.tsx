@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, Globe, PlayCircle, ShieldCheck } from "lucide-react";
 import { APP, fmt } from "@/lib/config";
 import { openLink } from "@/lib/telegram";
-import { hasAdsgramBlock, showAdsgramAd } from "@/lib/adsgram";
+import { MIN_WATCH_MS, adErrorMessage, hasBlock, showAd, type AdNet } from "@/lib/adnetworks";
 import { doClaimSite, doRecordAd, getPayoutProofs, getSites } from "@/lib/api.functions";
 import { useAppState } from "./useApp";
 import { Card, GhostButton, GoldButton, Guide, Pill, SectionTitle, Stat } from "./ui";
@@ -43,40 +43,92 @@ export function AdsTab() {
   );
 }
 
+type NetworkCard = {
+  net: AdNet;
+  network: string;
+  title: string;
+  blockId: string;
+  reward: number;
+  cap: number;
+  seen: number;
+};
+
 function AdsView() {
   const { state, boot, auth, run, busy } = useAppState();
   const [consent, setConsent] = useState(false);
-  const [playing, setPlaying] = useState<"int" | "reward" | null>(null);
+  const [playing, setPlaying] = useState<AdNet | null>(null);
   const { data: proofs } = useQuery({
     queryKey: ["payout-proofs"],
     queryFn: () => getPayoutProofs(),
     refetchInterval: 60000,
   });
   const origin = typeof window === "undefined" ? "" : window.location.origin;
+  const cfg = boot.cfg as unknown as Record<string, number | string | boolean>;
+  const u = state.user as unknown as Record<string, number>;
 
-  const intCap = boot.cfg.intAdsDailyCap ?? 10;
-  const intReward = boot.cfg.intAdReward ?? 50;
-  const rewardCap = boot.cfg.rewardAdsDailyCap ?? 10;
-  const rewardReward = boot.cfg.rewardAdReward ?? 5;
-  const intLeft = Math.max(0, intCap - (state.user.intAdsToday ?? 0));
-  const rewardLeft = Math.max(0, rewardCap - (state.user.rewardAdsToday ?? 0));
+  const cards: NetworkCard[] = ([
+    {
+      net: "int",
+      network: "Adsgram · Interstitial",
+      title: "Quick Ad Break",
+      blockId: String(cfg["adsgramIntBlockId"] ?? ""),
+      reward: Number(cfg["intAdReward"] ?? 50),
+      cap: Number(cfg["intAdsDailyCap"] ?? 10),
+      seen: Number(u["intAdsToday"] ?? 0),
+    },
+    {
+      net: "reward",
+      network: "Adsgram · Rewarded Video",
+      title: "Rewarded Ad",
+      blockId: String(cfg["adsgramRewardBlockId"] ?? ""),
+      reward: Number(cfg["rewardAdReward"] ?? 5),
+      cap: Number(cfg["rewardAdsDailyCap"] ?? 10),
+      seen: Number(u["rewardAdsToday"] ?? 0),
+    },
+    {
+      net: "giga",
+      network: "Gigapub",
+      title: "Gigapub Ad",
+      blockId: String(cfg["gigaBlockId"] ?? ""),
+      reward: Number(cfg["gigaAdReward"] ?? 20),
+      cap: Number(cfg["gigaAdsDailyCap"] ?? 10),
+      seen: Number(u["gigaAdsToday"] ?? 0),
+    },
+    {
+      net: "monetag",
+      network: "Monetag",
+      title: "Monetag Ad",
+      blockId: String(cfg["monetagBlockId"] ?? ""),
+      reward: Number(cfg["monetagAdReward"] ?? 20),
+      cap: Number(cfg["monetagAdsDailyCap"] ?? 10),
+      seen: Number(u["monetagAdsToday"] ?? 0),
+    },
+    {
+      net: "bitvex",
+      network: "Adsbitvex",
+      title: "Adsbitvex Ad",
+      blockId: String(cfg["bitvexBlockId"] ?? ""),
+      reward: Number(cfg["bitvexAdReward"] ?? 20),
+      cap: Number(cfg["bitvexAdsDailyCap"] ?? 10),
+      seen: Number(u["bitvexAdsToday"] ?? 0),
+    },
+  ] as NetworkCard[]).filter((c) => hasBlock(c.blockId));
 
-  const watch = (network: "int" | "reward") => {
-    const blockId =
-      network === "int" ? boot.cfg.adsgramIntBlockId : boot.cfg.adsgramRewardBlockId;
-    setPlaying(network);
+  const totalCap = cards.reduce((sum, c) => sum + c.cap, 0);
+
+  const watch = (card: NetworkCard) => {
+    setPlaying(card.net);
     void (async () => {
-      const ok = hasAdsgramBlock(blockId ?? "") ? await showAdsgramAd(blockId!) : false;
-      if (!ok) {
-        setPlaying(null);
+      const r = await showAd(card.net, card.blockId, MIN_WATCH_MS);
+      setPlaying(null);
+      if (!r.ok) {
         const { toast } = await import("sonner");
-        toast.error("📺 Ad was not watched fully — no reward this time.");
+        toast.error(adErrorMessage(r), { description: "Tap Watch Ad again to retry." });
         return;
       }
-      setPlaying(null);
       await run(
-        () => doRecordAd({ data: { initData: auth, network } }),
-        (r) => `✅ View counted! +${r?.reward ?? 0} ${APP.tokenName}`
+        () => doRecordAd({ data: { initData: auth, network: card.net } }),
+        (res) => `✅ View counted! +${res?.reward ?? 0} ${APP.tokenName}`
       );
     })();
   };
@@ -84,7 +136,11 @@ function AdsView() {
   return (
     <>
       <div className="grid grid-cols-2 gap-3">
-        <Stat emoji="📺" label="Views today" value={`${fmt(state.user.adsToday)}/${fmt(intCap + rewardCap)}`} />
+        <Stat
+          emoji="📺"
+          label="Views today"
+          value={`${fmt(state.user.adsToday)}/${fmt(totalCap)}`}
+        />
         <Stat emoji="🏆" label="Total views" value={fmt(state.user.adsTotal)} />
       </div>
 
@@ -101,28 +157,28 @@ function AdsView() {
         </span>
       </label>
 
-      <AdBlockCard
-        logo={adsgramLogo}
-        network="Adsgram · Interstitial"
-        title="Quick Ad Break"
-        reward={intReward}
-        left={intLeft}
-        cap={intCap}
-        playing={playing === "int"}
-        disabled={busy || playing !== null || !consent || intLeft <= 0}
-        onWatch={() => watch("int")}
-      />
-      <AdBlockCard
-        logo={adsgramLogo}
-        network="Adsgram · Rewarded Video"
-        title="Rewarded Ad"
-        reward={rewardReward}
-        left={rewardLeft}
-        cap={rewardCap}
-        playing={playing === "reward"}
-        disabled={busy || playing !== null || !consent || rewardLeft <= 0}
-        onWatch={() => watch("reward")}
-      />
+      {cards.map((c) => (
+        <AdBlockCard
+          key={c.net}
+          logo={adsgramLogo}
+          network={c.network}
+          title={c.title}
+          reward={c.reward}
+          left={Math.max(0, c.cap - c.seen)}
+          cap={c.cap}
+          playing={playing === c.net}
+          disabled={busy || playing !== null || !consent || c.cap - c.seen <= 0}
+          onWatch={() => watch(c)}
+        />
+      ))}
+      {!cards.length && (
+        <Card>
+          <SectionTitle icon="📺" title="Watch Ads" action={<Pill>Soon</Pill>} />
+          <p className="text-[11px] text-muted-foreground">
+            Ad networks are being configured — check back shortly.
+          </p>
+        </Card>
+      )}
 
       <Card>
         <SectionTitle icon="🧾" title="Proof of Payouts" action={<Pill tone="success">Public</Pill>} />
