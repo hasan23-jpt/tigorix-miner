@@ -15,6 +15,9 @@ import {
   adminSiteSave,
   adminUpdateUser,
   adminWithdrawDecision,
+  adminFindUsers,
+  adminUserInfo,
+  adminRepairBalance,
 } from "@/lib/api.functions";
 import { useAppState } from "./useApp";
 import { Card, Field, GhostButton, GoldButton, Guide, Pill, SectionTitle, Stat } from "./ui";
@@ -576,6 +579,9 @@ function SettingsAdmin({
 const AD_TEXT_FIELDS = [
   ["adsgramIntBlockId", "Adsgram interstitial block ID"],
   ["adsgramRewardBlockId", "Adsgram rewarded block ID"],
+  ["gigaBlockId", "Gigapub project ID"],
+  ["monetagBlockId", "Monetag zone ID"],
+  ["bitvexBlockId", "Adsbitvex zone ID"],
 ] as const;
 
 const AD_NUMBER_FIELDS = [
@@ -583,6 +589,12 @@ const AD_NUMBER_FIELDS = [
   ["intAdsDailyCap", "Interstitial daily ad limit"],
   ["rewardAdReward", "Rewarded block reward (tokens per ad)"],
   ["rewardAdsDailyCap", "Rewarded block daily ad limit"],
+  ["gigaAdReward", "Gigapub reward (tokens per ad)"],
+  ["gigaAdsDailyCap", "Gigapub daily ad limit"],
+  ["monetagAdReward", "Monetag reward (tokens per ad)"],
+  ["monetagAdsDailyCap", "Monetag daily ad limit"],
+  ["bitvexAdReward", "Adsbitvex reward (tokens per ad)"],
+  ["bitvexAdsDailyCap", "Adsbitvex daily ad limit"],
   ["withdrawAdsRequired", "Daily ads required to withdraw"],
   ["withdrawMinRefs", "Valid referrals required to withdraw"],
   ["withdrawCooldownHours", "Withdrawal cooldown (hours)"],
@@ -610,6 +622,7 @@ function AdsAdmin({
       [...AD_TEXT_FIELDS, ...AD_NUMBER_FIELDS].map(([k]) => [k, String(cfg[k] ?? "")])
     )
   );
+  const [autoAd, setAutoAd] = useState(cfg["autoIntAd"] !== false);
   const [site, setSite] = useState<{ id?: string; title: string; url: string; reward: string }>({
     title: "",
     url: "",
@@ -619,7 +632,11 @@ function AdsAdmin({
   return (
     <>
       <Card>
-        <SectionTitle icon="📺" title="Ad Networks" action={<Pill tone="info">Adsgram</Pill>} />
+        <SectionTitle
+          icon="📺"
+          title="Ad Networks"
+          action={<Pill tone="info">Adsgram · Gigapub · Monetag · Adsbitvex</Pill>}
+        />
         <Guide>
           Set the Adsgram block IDs and rewards. The interstitial block gates mining, reward codes and
           claims; the rewarded block pays per view. Changes apply instantly.
@@ -642,10 +659,19 @@ function AdsAdmin({
               onChange={(e) => setForm({ ...form, [k]: e.target.value })}
             />
           ))}
+          <label className="flex items-center gap-2 rounded-xl border border-border bg-background/40 p-3 text-xs font-bold">
+            <input
+              type="checkbox"
+              checked={autoAd}
+              onChange={(e) => setAutoAd(e.target.checked)}
+              className="size-4 accent-[hsl(var(--primary))]"
+            />
+            Show one interstitial ad on app open / Home visit
+          </label>
           <GoldButton
             disabled={busy}
             onClick={() => {
-              const patch: Record<string, string | number> = {};
+              const patch: Record<string, string | number | boolean> = { autoIntAd: autoAd };
               for (const [k] of AD_TEXT_FIELDS) patch[k] = (form[k] ?? "").trim();
               for (const [k] of AD_NUMBER_FIELDS) {
                 const v = Number(form[k]);
