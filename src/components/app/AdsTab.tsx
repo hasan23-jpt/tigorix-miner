@@ -66,7 +66,7 @@ function AdsView() {
   const cfg = boot.cfg as unknown as Record<string, number | string | boolean>;
   const u = state.user as unknown as Record<string, number>;
 
-  const cards: NetworkCard[] = [
+  const cards: NetworkCard[] = ([
     {
       net: "int",
       network: "Adsgram · Interstitial",
@@ -112,7 +112,7 @@ function AdsView() {
       cap: Number(cfg["bitvexAdsDailyCap"] ?? 10),
       seen: Number(u["bitvexAdsToday"] ?? 0),
     },
-  ].filter((c) => hasBlock(c.blockId));
+  ] as NetworkCard[]).filter((c) => hasBlock(c.blockId));
 
   const totalCap = cards.reduce((sum, c) => sum + c.cap, 0);
 
