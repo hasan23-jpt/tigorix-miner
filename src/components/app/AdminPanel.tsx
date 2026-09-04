@@ -828,3 +828,261 @@ function AdsAdmin({
     </>
   );
 }
+
+/* ---------------------------------- users -------------------------------- */
+
+function UsersAdmin({ admin, onDone }: { admin: AdminAuth; onDone: () => void }) {
+  const { run, busy } = useAppState();
+  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState("");
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const { data: users, refetch: refetchList } = useQuery({
+    queryKey: ["admin-users", search],
+    queryFn: () => adminFindUsers({ data: { ...admin, query: search } }),
+  });
+
+  const { data: detail, refetch: refetchDetail } = useQuery({
+    queryKey: ["admin-user", openId],
+    enabled: !!openId,
+    queryFn: () => adminUserInfo({ data: { ...admin, userId: openId! } }),
+  });
+
+  const reload = () => {
+    void refetchList();
+    if (openId) void refetchDetail();
+    onDone();
+  };
+
+  if (openId && detail) {
+    const u = detail.user;
+    const a = detail.audit;
+    return (
+      <div className="space-y-4">
+        <button
+          onClick={() => setOpenId(null)}
+          className="flex items-center gap-1.5 text-xs font-bold text-primary"
+        >
+          <ArrowLeft className="size-4" /> Back to user list
+        </button>
+
+        <Card>
+          <SectionTitle
+            icon="👤"
+            title={u.name}
+            action={<Pill tone={u.suspended ? "danger" : "success"}>{u.suspended ? "suspended" : "active"}</Pill>}
+          />
+          <p className="text-[11px] text-muted-foreground">
+            🆔 {u.id} · joined {new Date(u.createdAt).toISOString().slice(0, 10)} · last seen{" "}
+            {u.lastSeen ? new Date(u.lastSeen).toISOString().slice(5, 16).replace("T", " ") : "—"}
+          </p>
+          {u.suspended && u.suspendReason && (
+            <p className="mt-1 text-[11px] text-destructive">⚠️ {u.suspendReason}</p>
+          )}
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <Stat emoji="🪙" label="Balance" value={fmt(u.balance)} />
+            <Stat emoji="📈" label="Total earned" value={fmt(u.totalEarned)} />
+            <Stat emoji="📺" label="Ads (today/total)" value={`${fmt(u.adsToday)}/${fmt(u.adsTotal)}`} />
+            <Stat emoji="👥" label="Refs (active)" value={`${fmt(u.refCount)} (${fmt(u.refActive)})`} />
+            <Stat emoji="💸" label="Withdrawals" value={`${fmt(u.withdrawCount)}`} />
+            <Stat emoji="💵" label="Paid out" value={`$${u.totalPaidUsd.toFixed(4)}`} />
+            <Stat emoji="🎁" label="Ref pending" value={fmt(u.refEarnPending)} />
+            <Stat emoji="🏦" label="Ref claimed" value={fmt(u.refEarnClaimed)} />
+          </div>
+          <p className="mt-2 truncate text-[10px] text-muted-foreground">
+            💳 {u.wallet || "no wallet"} · 🌐 {u.ip || "—"} · 📱 {u.device || "—"}
+          </p>
+        </Card>
+
+        <Card>
+          <SectionTitle
+            icon="🧮"
+            title="Balance audit"
+            action={<Pill tone={a.ok ? "success" : "danger"}>{a.ok ? "correct" : "mismatch"}</Pill>}
+          />
+          <p className="text-[11px] text-muted-foreground">
+            Activity ledger: <b className="text-foreground">{fmt(a.ledger)}</b> · stored balance:{" "}
+            <b className="text-foreground">{fmt(a.balance)}</b> · difference:{" "}
+            <b className={a.ok ? "text-success" : "text-destructive"}>{fmt(Math.abs(a.diff))}</b> ·{" "}
+            {a.entries} ledger entries
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            ✅ {detail.counts.tasks} tasks · 🌐 {detail.counts.sites} site visits · 💸{" "}
+            {detail.counts.approvedWithdrawals}/{detail.counts.withdrawals} withdrawals approved
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <GhostButton
+              disabled={busy || a.ok}
+              onClick={() =>
+                void run(
+                  () => adminRepairBalance({ data: { ...admin, userId: u.id } }),
+                  () => "✅ Balance rebuilt from activity"
+                ).then(reload)
+              }
+            >
+              🧮 Fix balance
+            </GhostButton>
+            <GhostButton
+              disabled={busy}
+              onClick={() => {
+                const v = window.prompt("Set balance", String(u.balance));
+                if (v === null) return;
+                void run(
+                  () => adminUpdateUser({ data: { ...admin, userId: u.id, balance: Number(v) } }),
+                  () => "✅ Balance updated"
+                ).then(reload);
+              }}
+            >
+              🪙 Set balance
+            </GhostButton>
+            <GhostButton
+              disabled={busy}
+              onClick={() =>
+                void run(
+                  () =>
+                    adminUpdateUser({
+                      data: { ...admin, userId: u.id, suspended: !u.suspended },
+                    }),
+                  () => (u.suspended ? "✅ Unsuspended" : "🚫 Suspended")
+                ).then(reload)
+              }
+            >
+              {u.suspended ? "✅ Unsuspend" : "🚫 Suspend"}
+            </GhostButton>
+          </div>
+        </Card>
+
+        <Card>
+          <SectionTitle icon="🧾" title="Activity history" />
+          <div className="space-y-1.5">
+            {detail.transactions.map((t, i) => (
+              <div
+                key={`${t.at}-${i}`}
+                className="flex items-center justify-between rounded-lg border border-border bg-background/40 px-3 py-2 text-[11px]"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-bold">
+                    {t.type} {t.note ? `· ${t.note}` : ""}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {new Date(t.at).toISOString().slice(0, 16).replace("T", " ")} UTC
+                  </p>
+                </div>
+                <span className={t.amount >= 0 ? "font-black text-success" : "font-black text-destructive"}>
+                  {t.amount >= 0 ? "+" : ""}
+                  {fmt(t.amount)}
+                </span>
+              </div>
+            ))}
+            {!detail.transactions.length && (
+              <p className="py-3 text-center text-[11px] text-muted-foreground">No activity yet.</p>
+            )}
+          </div>
+        </Card>
+
+        <Card>
+          <SectionTitle icon="💸" title="Withdrawals" />
+          <div className="space-y-1.5">
+            {detail.withdrawals.map((w) => (
+              <div
+                key={w.id}
+                className="flex items-center justify-between rounded-lg border border-border bg-background/40 px-3 py-2 text-[11px]"
+              >
+                <div>
+                  <p className="font-bold">
+                    #{w.number} · {fmt(w.tokens)} {APP.tokenName}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    ${w.netUsd.toFixed(4)} net ·{" "}
+                    {new Date(w.at).toISOString().slice(0, 16).replace("T", " ")} UTC
+                  </p>
+                </div>
+                <Pill tone={w.status === "approved" ? "success" : w.status === "rejected" ? "danger" : "warn"}>
+                  {w.status}
+                </Pill>
+              </div>
+            ))}
+            {!detail.withdrawals.length && (
+              <p className="py-3 text-center text-[11px] text-muted-foreground">No withdrawals.</p>
+            )}
+          </div>
+        </Card>
+
+        <Card>
+          <SectionTitle icon="👥" title="Referrals" />
+          <div className="space-y-1.5">
+            {detail.referrals.map((r, i) => (
+              <div
+                key={`${r.name}-${i}`}
+                className="flex items-center justify-between rounded-lg border border-border bg-background/40 px-3 py-2 text-[11px]"
+              >
+                <span className="font-bold">{r.name}</span>
+                <Pill
+                  tone={
+                    r.status === "verified"
+                      ? "success"
+                      : r.status === "mid"
+                        ? "info"
+                        : r.status === "fake"
+                          ? "danger"
+                          : "warn"
+                  }
+                >
+                  {r.status === "mid" ? "half verified" : r.status}
+                </Pill>
+              </div>
+            ))}
+            {!detail.referrals.length && (
+              <p className="py-3 text-center text-[11px] text-muted-foreground">No referrals.</p>
+            )}
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <Card>
+      <SectionTitle icon="👥" title="Users" action={<Pill>{users?.length ?? 0} shown</Pill>} />
+      <Guide>
+        Search by Telegram ID, username, name or wallet address. Open a user to see the full
+        activity history and whether their balance matches their activity.
+      </Guide>
+      <div className="mb-3 grid grid-cols-[1fr_auto] gap-2">
+        <Field
+          label="Search user"
+          placeholder="@username, 5419054691 or 0x…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <div className="self-end">
+          <GoldButton onClick={() => setSearch(query.trim())}>🔍 Search</GoldButton>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {(users ?? []).map((u) => (
+          <button
+            key={u.id}
+            onClick={() => setOpenId(u.id)}
+            className="w-full rounded-xl border border-border bg-background/40 p-3 text-left"
+          >
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-bold">{u.name}</p>
+                <p className="text-[10px] text-muted-foreground">
+                  {u.id} · {fmt(u.balance)} {APP.tokenName} · {u.refs} refs
+                </p>
+              </div>
+              <Pill tone={u.suspended ? "danger" : "success"}>
+                {u.suspended ? "suspended" : "active"}
+              </Pill>
+            </div>
+          </button>
+        ))}
+        {users && !users.length && (
+          <p className="py-4 text-center text-xs text-muted-foreground">No users found.</p>
+        )}
+      </div>
+    </Card>
+  );
+}
