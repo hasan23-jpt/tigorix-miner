@@ -1,10 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { APP } from "@/lib/config";
-import { bannerUrl, btn, sendPhoto } from "@/lib/bot.server";
-
-function webhookSecret() {
-  return process.env["TELEGRAM_WEBHOOK_SECRET"] ?? "";
-}
+import { bannerUrl, btn, sendMessage, sendPhoto } from "@/lib/bot.server";
+import { getCfg } from "@/lib/core.server";
 
 const WELCOME = (name: string) =>
   `🐯 <b>Welcome to Tigorix, ${name}!</b>\n\n` +
@@ -17,11 +14,8 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const secret = webhookSecret();
-        if (
-          secret &&
-          request.headers.get("X-Telegram-Bot-Api-Secret-Token") !== secret
-        ) {
+        const secret = process.env["TELEGRAM_WEBHOOK_SECRET"] ?? "";
+        if (secret && request.headers.get("X-Telegram-Bot-Api-Secret-Token") !== secret) {
           return new Response("Unauthorized", { status: 401 });
         }
 
@@ -40,11 +34,22 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
         const text = (msg?.text ?? "").trim();
         if (!text.startsWith("/start")) return Response.json({ ok: true });
 
-        const origin = new URL(request.url).origin;
-        await sendPhoto(chatId, bannerUrl(origin), WELCOME(msg?.from?.first_name ?? "Tiger"), [
-          [btn.miniApp],
-          [btn.community, btn.payment],
-        ]);
+        const caption = WELCOME(msg?.from?.first_name ?? "Tiger");
+        const keyboard = [[btn.miniApp], [btn.community, btn.payment]];
+
+        // Admin-configured banner wins; otherwise the bundled banner is used.
+        // If Telegram cannot fetch the image we still deliver the text reply.
+        let photo = "";
+        try {
+          const cfg = await getCfg();
+          photo = (cfg.bannerUrl ?? "").trim();
+        } catch (e) {
+          console.error("webhook: config read failed", e);
+        }
+        if (!photo) photo = bannerUrl(new URL(request.url).origin);
+
+        const sent = await sendPhoto(chatId, photo, caption, keyboard);
+        if (!sent) await sendMessage(chatId, caption, keyboard);
 
         return Response.json({ ok: true });
       },
