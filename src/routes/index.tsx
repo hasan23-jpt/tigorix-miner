@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Home, ListChecks, PlayCircle, User, Users } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
@@ -11,6 +11,7 @@ import { AdsTab } from "@/components/app/AdsTab";
 import { ReferTab } from "@/components/app/ReferTab";
 import { ProfileTab } from "@/components/app/ProfileTab";
 import { AdminPanel } from "@/components/app/AdminPanel";
+import { useAdGate } from "@/components/app/useAdGate";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -67,9 +68,38 @@ const TABS = [
 type TabId = (typeof TABS)[number]["id"];
 
 function Shell() {
-  const { state } = useAppState();
+  const { state, boot } = useAppState();
   const [tab, setTab] = useState<TabId>("home");
   const [admin, setAdmin] = useState(false);
+  const { showAutoAd } = useAdGate();
+  const lastAutoAd = useRef(0);
+
+  // One interstitial on app open and each time the user returns to Home.
+  useEffect(() => {
+    if (tab !== "home" || admin) return;
+    if (boot.cfg.autoIntAd === false || state.user.suspended || boot.cfg.maintenance) return;
+    if (Date.now() - lastAutoAd.current < 60000) return;
+    lastAutoAd.current = Date.now();
+    void showAutoAd();
+  }, [tab, admin, showAutoAd, boot.cfg.autoIntAd, boot.cfg.maintenance, state.user.suspended]);
+
+  if (boot.cfg.maintenance && !state.admin) {
+    return (
+      <main className="grid min-h-screen place-items-center p-6 text-center">
+        <div className="surface-card max-w-sm p-6">
+          <p className="animate-float text-5xl">🛠️</p>
+          <h1 className="mt-3 text-xl font-extrabold">We are upgrading Tigorix</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Maintenance mode is on. Mining, tasks and withdrawals will be back shortly — your
+            balance and referrals are completely safe. 🐯
+          </p>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Follow the community channel for the live status update.
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   if (state.user.suspended) {
     return (
