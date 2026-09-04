@@ -198,7 +198,7 @@ export function HomeTab({ onNavigate }: { onNavigate: (tab: string) => void }) {
         />
         <Guide>
           Claim every day to climb the streak. Rewards reset at <b>00:00:00 UTC</b>, and missing a
-          day sends you back to Day 1.
+          day sends you back to Day 1. A short ad (10 seconds) plays before the reward is added.
         </Guide>
         <div className="mb-3 grid grid-cols-7 gap-1.5">
           {DAILY_REWARDS.map((r, i) => {
@@ -223,18 +223,22 @@ export function HomeTab({ onNavigate }: { onNavigate: (tab: string) => void }) {
           })}
         </div>
         <GoldButton
-          disabled={busy || daily.claimedToday}
+          disabled={busy || daily.claimedToday || watchingAd > 0}
           onClick={() => {
             haptic("medium");
-            void run(
-              () => doClaimDaily({ data: { initData: auth } }),
-              (r) => `🎉 Day ${r?.day}: +${r?.reward} ${APP.tokenName}`
+            void gateWithInterstitial(() =>
+              run(
+                () => doClaimDaily({ data: { initData: auth } }),
+                (r) => `🎉 Day ${r?.day}: +${r?.reward} ${APP.tokenName}`
+              )
             );
           }}
         >
-          {daily.claimedToday
-            ? "✅ Claimed — back after 00:00 UTC"
-            : `🎁 Claim ${daily.nextReward} ${APP.tokenName}`}
+          {watchingAd > 0
+            ? "📺 Watching ad…"
+            : daily.claimedToday
+              ? "✅ Claimed — back after 00:00 UTC"
+              : `🎁 Claim ${daily.nextReward} ${APP.tokenName}`}
         </GoldButton>
       </Card>
 
