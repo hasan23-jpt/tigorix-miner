@@ -565,37 +565,93 @@ function SettingsAdmin({
   const [form, setForm] = useState<Record<string, string>>(
     Object.fromEntries(NUMERIC_FIELDS.map(([k]) => [k, String(cfg[k] ?? "")]))
   );
+  const [maintenance, setMaintenance] = useState(cfg["maintenance"] === true);
+  const [banner, setBanner] = useState(String(cfg["bannerUrl"] ?? ""));
   return (
-    <Card>
-      <SectionTitle icon="⚙️" title="Economy Settings" />
-      <Guide>Values apply instantly to every user. Mining reward and duration are live-editable.</Guide>
-      <div className="space-y-2">
-        {NUMERIC_FIELDS.map(([k, label]) => (
-          <Field
-            key={k}
-            label={label}
-            value={form[k] ?? ""}
-            onChange={(e) => setForm({ ...form, [k]: e.target.value })}
+    <>
+      <Card>
+        <SectionTitle
+          icon="🛠️"
+          title="Maintenance Mode"
+          action={
+            <Pill tone={maintenance ? "danger" : "success"}>{maintenance ? "on" : "off"}</Pill>
+          }
+        />
+        <Guide>
+          While maintenance is on, everyone except you sees a friendly “we are upgrading” screen and
+          no earning action can run. You keep full access to the app and this panel.
+        </Guide>
+        <label className="flex items-center gap-2 rounded-xl border border-border bg-background/40 p-3 text-xs font-bold">
+          <input
+            type="checkbox"
+            checked={maintenance}
+            onChange={(e) => setMaintenance(e.target.checked)}
+            className="size-4 accent-[hsl(var(--primary))]"
           />
-        ))}
-        <GoldButton
-          disabled={busy}
-          onClick={() => {
-            const patch: Record<string, number> = {};
-            for (const [k] of NUMERIC_FIELDS) {
-              const v = Number(form[k]);
-              if (Number.isFinite(v)) patch[k] = v;
+          Put the app into maintenance mode
+        </label>
+        <div className="mt-2">
+          <Field
+            label="Welcome / broadcast banner image URL"
+            placeholder="https://…/tigorix-banner.png"
+            value={banner}
+            onChange={(e) => setBanner(e.target.value)}
+          />
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            Used for the bot welcome message. Leave empty to use the built-in logo banner.
+          </p>
+        </div>
+        <div className="mt-2">
+          <GoldButton
+            disabled={busy}
+            onClick={() =>
+              void run(
+                () =>
+                  adminSaveConfig({
+                    data: { ...admin, patch: { maintenance, bannerUrl: banner.trim() } },
+                  }),
+                () => (maintenance ? "🛠️ Maintenance mode ON" : "✅ App is live")
+              ).then(onDone)
             }
-            void run(
-              () => adminSaveConfig({ data: { ...admin, patch } }),
-              () => "✅ Settings saved"
-            ).then(onDone);
-          }}
-        >
-          💾 Save Settings
-        </GoldButton>
-      </div>
-    </Card>
+          >
+            💾 Save
+          </GoldButton>
+        </div>
+      </Card>
+
+      <Card>
+        <SectionTitle icon="⚙️" title="Economy Settings" />
+        <Guide>
+          Values apply instantly to every user. Mining reward and duration are live-editable.
+        </Guide>
+        <div className="space-y-2">
+          {NUMERIC_FIELDS.map(([k, label]) => (
+            <Field
+              key={k}
+              label={label}
+              value={form[k] ?? ""}
+              onChange={(e) => setForm({ ...form, [k]: e.target.value })}
+            />
+          ))}
+          <GoldButton
+            disabled={busy}
+            onClick={() => {
+              const patch: Record<string, number> = {};
+              for (const [k] of NUMERIC_FIELDS) {
+                const v = Number(form[k]);
+                if (Number.isFinite(v)) patch[k] = v;
+              }
+              void run(
+                () => adminSaveConfig({ data: { ...admin, patch } }),
+                () => "✅ Settings saved"
+              ).then(onDone);
+            }}
+          >
+            💾 Save Settings
+          </GoldButton>
+        </div>
+      </Card>
+    </>
   );
 }
 
