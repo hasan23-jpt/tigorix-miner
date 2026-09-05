@@ -29,7 +29,8 @@ function loadSdk(): Promise<boolean> {
 }
 
 export function hasAdsgramBlock(blockId: string | undefined) {
-  return !!blockId && /^[a-z]+-\d+$/i.test(blockId.trim());
+  // Adsgram block IDs come in both forms: "int-43953" and plain numbers like "43952".
+  return !!blockId && /^(?:[a-z]+-)?\d+$/i.test(blockId.trim());
 }
 
 /**

@@ -8,7 +8,8 @@
  */
 import { showAdsgramAd } from "./adsgram";
 
-export const MIN_WATCH_MS = 10000;
+/** No minimum watch timer: an ad that finished counts, however long it played. */
+export const MIN_WATCH_MS = 0;
 
 export type AdNet = "int" | "reward" | "giga" | "monetag" | "bitvex";
 
