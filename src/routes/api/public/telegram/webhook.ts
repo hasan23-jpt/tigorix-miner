@@ -15,7 +15,8 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
     handlers: {
       POST: async ({ request }) => {
         const secret = process.env["TELEGRAM_WEBHOOK_SECRET"] ?? "";
-        if (secret && request.headers.get("X-Telegram-Bot-Api-Secret-Token") !== secret) {
+        const receivedSecret = request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "";
+        if (!secret || receivedSecret !== secret) {
           return new Response("Unauthorized", { status: 401 });
         }
 
@@ -49,7 +50,11 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
         if (!photo) photo = bannerUrl(new URL(request.url).origin);
 
         const sent = await sendPhoto(chatId, photo, caption, keyboard);
-        if (!sent) await sendMessage(chatId, caption, keyboard);
+        const delivered = sent ?? (await sendMessage(chatId, caption, keyboard));
+        if (!delivered) {
+          console.error("webhook: failed to deliver /start reply", { chatId });
+          return Response.json({ ok: false, error: "Telegram delivery failed" }, { status: 502 });
+        }
 
         return Response.json({ ok: true });
       },
