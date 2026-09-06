@@ -9,6 +9,36 @@ export function botToken() {
 
 const API = () => `https://api.telegram.org/bot${botToken()}`;
 
+let registeredWebhookOrigin = "";
+
+export async function telegramWebhookSecret() {
+  const bytes = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(`tigorix-webhook:${botToken()}`)
+  );
+  return hex(new Uint8Array(bytes));
+}
+
+/** Keeps the Telegram callback pointed at the current public deployment. */
+export async function ensureTelegramWebhook(origin: string) {
+  const cleanOrigin = origin.replace(/\/$/, "");
+  if (
+    !cleanOrigin.startsWith("https://") ||
+    cleanOrigin.includes("localhost") ||
+    cleanOrigin.includes("id-preview--") ||
+    registeredWebhookOrigin === cleanOrigin
+  ) {
+    return;
+  }
+  const result = await tg("setWebhook", {
+    url: `${cleanOrigin}/api/public/telegram/webhook`,
+    secret_token: await telegramWebhookSecret(),
+    allowed_updates: ["message"],
+    drop_pending_updates: false,
+  });
+  if (result) registeredWebhookOrigin = cleanOrigin;
+}
+
 export async function tg(method: string, body: Record<string, unknown>) {
   const res = await fetch(`${API()}/${method}`, {
     method: "POST",

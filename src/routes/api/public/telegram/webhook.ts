@@ -1,6 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { APP } from "@/lib/config";
-import { bannerUrl, btn, sendMessage, sendPhoto } from "@/lib/bot.server";
+import {
+  bannerUrl,
+  btn,
+  sendMessage,
+  sendPhoto,
+  telegramWebhookSecret,
+} from "@/lib/bot.server";
 import { getCfg } from "@/lib/core.server";
 
 const WELCOME = (name: string) =>
@@ -14,9 +20,10 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const secret = process.env["TELEGRAM_WEBHOOK_SECRET"] ?? "";
+        const secret =
+          process.env["TELEGRAM_WEBHOOK_SECRET"] ?? (await telegramWebhookSecret());
         const receivedSecret = request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "";
-        if (!secret || receivedSecret !== secret) {
+        if (receivedSecret !== secret) {
           return new Response("Unauthorized", { status: 401 });
         }
 
