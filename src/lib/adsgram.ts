@@ -19,7 +19,9 @@ function loadSdk(): Promise<boolean> {
   if (loading) return loading;
   loading = new Promise((resolve) => {
     const s = document.createElement("script");
-    s.src = "https://sad.adsgram.ai/js/adsgram.min.js";
+    // Official Adsgram Reward/Interstitial SDK. The old `adsgram.min.js`
+    // filename returns no usable controller on production deployments.
+    s.src = "https://sad.adsgram.ai/js/sad.min.js";
     s.async = true;
     s.onload = () => resolve(true);
     s.onerror = () => resolve(false);
@@ -49,7 +51,7 @@ export async function showAdsgramAd(blockId: string): Promise<boolean> {
       controllers.set(id, ctrl);
     }
     const result = await ctrl.show();
-    return result?.done !== false;
+    return result?.done === true;
   } catch {
     // user skipped / closed early / no fill
     return false;

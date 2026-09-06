@@ -44,7 +44,7 @@ import {
   adminDeleteSite,
 } from "./core.server";
 import type { AdNetwork } from "./core.server";
-import { verifyInitData } from "./bot.server";
+import { ensureTelegramWebhook, verifyInitData } from "./bot.server";
 
 type Auth = { initData: string };
 
@@ -53,11 +53,15 @@ export const bootstrap = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const auth = await verifyInitData(data.initData);
     const cfg = await getCfg();
+    const appOrigin = origin();
+    await ensureTelegramWebhook(appOrigin).catch((error) =>
+      console.error("Telegram webhook registration failed", error)
+    );
     const { user, isNew } = await ensureUser(auth, {
       ip: clientIp(),
       device: String(data.device ?? "").slice(0, 40),
       ref: String(data.ref ?? "").slice(0, 32),
-      origin: origin(),
+      origin: appOrigin,
     });
     return {
       isNew,

@@ -55,7 +55,6 @@ type NetworkCard = {
 
 function AdsView() {
   const { state, boot, auth, run, busy } = useAppState();
-  const [consent, setConsent] = useState(false);
   const [playing, setPlaying] = useState<AdNet | null>(null);
   const { data: proofs } = useQuery({
     queryKey: ["payout-proofs"],
@@ -144,19 +143,6 @@ function AdsView() {
         <Stat emoji="🏆" label="Total views" value={fmt(state.user.adsTotal)} />
       </div>
 
-      <label className="flex items-start gap-2.5 rounded-xl border border-border bg-background/40 p-3">
-        <input
-          type="checkbox"
-          checked={consent}
-          onChange={(e) => setConsent(e.target.checked)}
-          className="mt-0.5 size-4 accent-[hsl(var(--primary))]"
-        />
-        <span className="text-[11px] text-muted-foreground">
-          I agree to be shown advertisements for these optional bonuses. I can decline and keep
-          using every other feature of the app.
-        </span>
-      </label>
-
       {cards.map((c) => (
         <AdBlockCard
           key={c.net}
@@ -167,7 +153,7 @@ function AdsView() {
           left={Math.max(0, c.cap - c.seen)}
           cap={c.cap}
           playing={playing === c.net}
-          disabled={busy || playing !== null || !consent || c.cap - c.seen <= 0}
+          disabled={busy || playing !== null || c.cap - c.seen <= 0}
           onWatch={() => watch(c)}
         />
       ))}
