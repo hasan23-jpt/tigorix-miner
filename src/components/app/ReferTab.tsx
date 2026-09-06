@@ -20,7 +20,7 @@ export function ReferTab() {
   });
 
   const rewards = data?.rewards ?? { join: 250, day1: 500, day2: 750 };
-  const activity = data?.activity ?? { day1: 1, day2: 1 };
+  const activity = data?.activity ?? { day1: 10, day2: 15 };
 
   return (
     <div className="space-y-4">
