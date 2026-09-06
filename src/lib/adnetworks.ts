@@ -82,33 +82,35 @@ async function showMonetagAd(zone: string): Promise<boolean> {
 
 /* ------------------------------- Adsbitvex ------------------------------- */
 
-async function showBitvexAd(zone: string): Promise<boolean> {
-  const sdk = `show_${zone}`;
+/**
+ * AdsBitvex: one script tag per app id, then `window.showadsbitvex()` which
+ * resolves when the full-screen reward ad finishes.
+ */
+async function showBitvexAd(appId: string): Promise<boolean> {
   const pick = () => {
     const w = W();
     const candidates = [
-      w[sdk],
-      (w["AdsBitvex"] as { show?: unknown } | undefined)?.show,
-      w["showBitvex"],
+      w["showadsbitvex"],
       w["showAdsBitvex"],
+      (w["AdsBitvex"] as { show?: unknown } | undefined)?.show,
     ];
     return candidates.find((c) => typeof c === "function") as
-      | ((zone?: string) => Promise<unknown>)
+      | (() => Promise<unknown>)
       | undefined;
   };
   if (!pick()) {
-    await loadScript(`bitvex:${zone}`, () => {
+    await loadScript(`bitvex:${appId}`, () => {
       const s = document.createElement("script");
-      s.src = "//libtl.com/sdk.js";
-      s.dataset["zone"] = zone;
-      s.dataset["sdk"] = sdk;
+      s.src = `https://sdk.adsbitvex.com/functions/v1/ad-script?appid=${encodeURIComponent(appId)}`;
       return s;
     });
+    // The SDK registers its global slightly after onload in some builds.
+    for (let i = 0; i < 20 && !pick(); i++) await new Promise((r) => setTimeout(r, 100));
   }
   const fn = pick();
   if (!fn) return false;
   try {
-    await fn(zone);
+    await fn();
     return true;
   } catch {
     return false;
