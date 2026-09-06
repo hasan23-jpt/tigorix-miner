@@ -91,8 +91,8 @@ export function ReferTab() {
         <SectionTitle icon="🏅" title="How rewards work" />
         <ul className="space-y-2 text-xs text-muted-foreground">
           <li>🤝 Friend joins → <b className="text-foreground">{rewards.join} {APP.tokenName}</b> (pending)</li>
-          <li>📅 Day 1: friend stays active ({activity.day1} daily check-in) → <b className="text-foreground">{rewards.day1} {APP.tokenName}</b></li>
-          <li>🔥 Day 2: friend returns and checks in again ({activity.day2}) → <b className="text-foreground">{rewards.day2} {APP.tokenName}</b></li>
+          <li>📅 Day 1: friend stays active (first day watch {activity.day1} ads) → <b className="text-foreground">{rewards.day1} {APP.tokenName}</b></li>
+          <li>🔥 Day 2: (2nd day watch {activity.day2} ads) → <b className="text-foreground">{rewards.day2} {APP.tokenName}</b></li>
           <li>🏆 Total per friend: <b className="text-foreground">{rewards.join + rewards.day1 + rewards.day2} {APP.tokenName}</b></li>
         </ul>
       </Card>
