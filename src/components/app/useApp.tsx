@@ -39,8 +39,8 @@ export function AppProvider({
     queryKey: ["state"],
     queryFn: () => getState({ data: { initData: auth } }),
     initialData: { admin: boot.admin, user: boot.user, mining: boot.mining, daily: boot.daily },
-    refetchInterval: 8000,
-    refetchOnWindowFocus: true,
+    refetchInterval: 60000,
+    refetchOnWindowFocus: false,
   });
 
   const value = useMemo<Ctx>(
