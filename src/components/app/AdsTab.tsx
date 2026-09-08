@@ -287,10 +287,11 @@ function AdBlockCard({
 function SitesView() {
   const { auth, run, busy } = useAppState();
   const { data } = useQuery({
-    queryKey: ["sites"],
-    queryFn: () => getSites({ data: { initData: auth } }),
-    refetchInterval: 30000,
-  });
+  queryKey: ["sites"],
+  queryFn: () => getSites({ data: { initData: auth } }),
+  refetchInterval: 60000,
+  refetchOnWindowFocus: false,
+});
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
