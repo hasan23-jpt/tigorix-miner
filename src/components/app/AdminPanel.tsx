@@ -35,7 +35,8 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
     queryKey: ["admin", pw],
     enabled: !!pw,
     retry: false,
-    refetchInterval: 20000,
+    refetchInterval: 60000,
+refetchOnWindowFocus: false,
     queryFn: () => adminLoad({ data: { initData: auth, password: pw } }),
   });
 
