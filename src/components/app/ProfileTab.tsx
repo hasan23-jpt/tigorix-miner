@@ -159,10 +159,11 @@ function WalletView() {
   const fee = cfg.feeFlatUsd + (gross * cfg.feePercent) / 100;
 
   const { data } = useQuery({
-    queryKey: ["finance"],
-    queryFn: () => getFinance({ data: { initData: auth } }),
-    refetchInterval: 15000,
-  });
+  queryKey: ["finance"],
+  queryFn: () => getFinance({ data: { initData: auth } }),
+  refetchInterval: 60000,
+  refetchOnWindowFocus: false,
+});
 
   const paid = (data?.withdrawals ?? [])
     .filter((w) => w.status === "approved")
