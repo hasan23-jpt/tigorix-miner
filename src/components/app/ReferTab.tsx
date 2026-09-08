@@ -14,10 +14,11 @@ export function ReferTab() {
   const link = `${APP.miniAppLink}?startapp=${state.user.id}`;
 
   const { data } = useQuery({
-    queryKey: ["referrals"],
-    queryFn: () => getReferrals({ data: { initData: auth } }),
-    refetchInterval: 15000,
-  });
+  queryKey: ["referrals"],
+  queryFn: () => getReferrals({ data: { initData: auth } }),
+  refetchInterval: 60000,
+  refetchOnWindowFocus: false,
+});
 
   const rewards = data?.rewards ?? { join: 250, day1: 500, day2: 750 };
   const activity = data?.activity ?? { day1: 10, day2: 15 };
