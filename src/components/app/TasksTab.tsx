@@ -12,10 +12,11 @@ export function TasksTab() {
   const [tab, setTab] = useState<"main" | "partner" | "daily">("main");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["tasks"],
-    queryFn: () => getTasks({ data: { initData: auth } }),
-    refetchInterval: 15000,
-  });
+  queryKey: ["tasks"],
+  queryFn: () => getTasks({ data: { initData: auth } }),
+  refetchInterval: 60000,
+  refetchOnWindowFocus: false,
+});
 
   const dailyDone = data?.dailyDone ?? [];
   const done = data?.done ?? [];
