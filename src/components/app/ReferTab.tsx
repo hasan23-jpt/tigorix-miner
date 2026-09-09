@@ -16,8 +16,9 @@ export function ReferTab() {
   const { data } = useQuery({
   queryKey: ["referrals"],
   queryFn: () => getReferrals({ data: { initData: auth } }),
-  refetchInterval: 60000,
-  refetchOnWindowFocus: false,
+  refetchInterval: false,
+refetchOnWindowFocus: false,
+staleTime: 30000,
 });
 
   const rewards = data?.rewards ?? { join: 250, day1: 500, day2: 750 };
