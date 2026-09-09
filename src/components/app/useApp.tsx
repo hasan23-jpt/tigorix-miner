@@ -56,7 +56,10 @@ export function AppProvider({
       auth,
       busy,
       refresh: async () => {
-        await qc.invalidateQueries();
+  await qc.invalidateQueries({
+    queryKey: ["state"],
+  });
+},
       },
       run: async (fn, success) => {
         setBusy(true);
