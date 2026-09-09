@@ -217,13 +217,19 @@ export async function auditBalance(user: UserDoc) {
     where: [{ field: "userId", op: "EQUAL", value: user.id }],
     limit: 1000,
   });
+
+  // No transaction history = nothing to audit
   if (!tx.length) return true;
-  const expected = tx.reduce((s, t) => s + (t.amount ?? 0), 0);
-  if (Math.abs(expected - user.balance) > 1) {
-    await suspend(user, `Balance mismatch: ledger ${expected} vs balance ${user.balance}`);
-    return false;
-  }
-  return true;
+
+  const expected = tx.reduce(
+    (sum, t) => sum + Number(t.amount ?? 0),
+    0
+  );
+
+  const actual = Number(user.balance ?? 0);
+
+  // Small rounding difference is acceptable
+  return Math.abs(expected - actual) <= 1;
 }
 
 export async function suspend(user: UserDoc, reason: string) {
