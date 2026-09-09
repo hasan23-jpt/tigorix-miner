@@ -33,8 +33,12 @@ export function HomeTab({ onNavigate }: { onNavigate: (tab: string) => void }) {
   }, []);
 
   useEffect(() => {
-    if (mining.status === "running" && now > mining.endsAt) void refresh();
-  }, [now, mining, refresh]);
+  // Refresh only once when mining reaches its end.
+  // Prevents repeated Firestore reads every second.
+  if (mining.status === "running" && now >= mining.endsAt) {
+    void refresh();
+  }
+}, [now, mining.status, mining.endsAt, refresh]);
 
   const running = mining.status === "running" && now < mining.endsAt;
   const progress = running
