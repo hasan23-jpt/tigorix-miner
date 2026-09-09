@@ -88,13 +88,41 @@ const DEFAULT_CFG: Cfg = {
   maintenance: false,
 };
 
+let cfgCache: { value: Cfg; expiresAt: number } | null = null;
+
+const CFG_CACHE_MS = 60_000;
+
 export async function getCfg(): Promise<Cfg> {
+  const now = Date.now();
+
+  if (cfgCache && cfgCache.expiresAt > now) {
+    return cfgCache.value;
+  }
+
   const doc = (await getDoc<Partial<Cfg>>("config/app")) ?? {};
-  return { ...DEFAULT_CFG, ...doc };
+
+  const value: Cfg = {
+    ...DEFAULT_CFG,
+    ...doc,
+  };
+
+  cfgCache = {
+    value,
+    expiresAt: now + CFG_CACHE_MS,
+  };
+
+  return value;
 }
 
 export async function saveCfg(patch: Partial<Cfg>) {
-  await setDoc("config/app", patch as Record<string, unknown>);
+  await setDoc(
+    "config/app",
+    patch as Record<string, unknown>
+  );
+
+  // Clear cache after admin/config changes
+  cfgCache = null;
+
   return getCfg();
 }
 
