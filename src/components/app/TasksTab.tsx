@@ -14,8 +14,9 @@ export function TasksTab() {
   const { data, isLoading } = useQuery({
   queryKey: ["tasks"],
   queryFn: () => getTasks({ data: { initData: auth } }),
-  refetchInterval: 60000,
-  refetchOnWindowFocus: false,
+  refetchInterval: false,
+refetchOnWindowFocus: false,
+staleTime: 30000,
 });
 
   const dailyDone = data?.dailyDone ?? [];
