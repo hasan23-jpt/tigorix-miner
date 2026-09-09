@@ -289,8 +289,9 @@ function SitesView() {
   const { data } = useQuery({
   queryKey: ["sites"],
   queryFn: () => getSites({ data: { initData: auth } }),
-  refetchInterval: 60000,
-  refetchOnWindowFocus: false,
+  refetchInterval: false,
+refetchOnWindowFocus: false,
+staleTime: 30000,
 });
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
