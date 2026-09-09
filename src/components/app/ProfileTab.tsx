@@ -161,8 +161,9 @@ function WalletView() {
   const { data } = useQuery({
   queryKey: ["finance"],
   queryFn: () => getFinance({ data: { initData: auth } }),
-  refetchInterval: 60000,
-  refetchOnWindowFocus: false,
+  refetchInterval: false,
+refetchOnWindowFocus: false,
+staleTime: 30000,
 });
 
   const paid = (data?.withdrawals ?? [])
