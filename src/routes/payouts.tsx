@@ -29,7 +29,9 @@ function PayoutsPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["payout-proofs"],
     queryFn: () => getPayoutProofs(),
-    refetchInterval: 30000,
+    refetchInterval: false,
+refetchOnWindowFocus: false,
+staleTime: 30000,
   });
 
   return (
