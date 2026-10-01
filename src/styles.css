@@ -92,7 +92,12 @@
   --gold-deep: oklch(0.68 0.19 55);
   --gradient-gold: linear-gradient(135deg, oklch(0.88 0.15 92), oklch(0.72 0.19 58));
   --gradient-surface: linear-gradient(160deg, oklch(0.24 0.02 62), oklch(0.17 0.015 60));
-  --gradient-glow: radial-gradient(circle at 50% 0%, oklch(0.8 0.17 82 / 25%), transparent 70%);
+  --gradient-glow:
+    radial-gradient(circle at 15% 0%, oklch(0.8 0.17 82 / 28%), transparent 45%),
+    radial-gradient(circle at 90% 20%, oklch(0.62 0.22 30 / 22%), transparent 40%),
+    radial-gradient(circle at 50% 100%, oklch(0.55 0.18 300 / 18%), transparent 50%);
+  --gradient-ember: linear-gradient(135deg, oklch(0.75 0.2 50), oklch(0.6 0.23 25), oklch(0.55 0.2 330));
+  --gradient-ring: conic-gradient(from 0deg, oklch(0.88 0.15 92), oklch(0.68 0.21 40), oklch(0.6 0.22 330), oklch(0.7 0.15 240), oklch(0.88 0.15 92));
   --shadow-gold: 0 10px 34px -12px oklch(0.8 0.17 82 / 55%);
   --shadow-card: 0 18px 40px -24px oklch(0 0 0 / 80%);
   --chart-1: oklch(0.646 0.222 41.116);
@@ -155,6 +160,7 @@
     color: var(--color-foreground);
     background-image: var(--gradient-glow);
     background-repeat: no-repeat;
+    background-attachment: fixed;
     -webkit-tap-highlight-color: transparent;
     overscroll-behavior-y: none;
   }
@@ -184,6 +190,16 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-card);
+}
+
+@utility bg-ember-gradient {
+  background-image: var(--gradient-ember);
+}
+
+@utility text-ember-gradient {
+  background-image: var(--gradient-ember);
+  background-clip: text;
+  color: transparent;
 }
 
 @utility glow-gold {
@@ -225,5 +241,76 @@
   .animate-shine {
     background-size: 200% 100%;
     animation: tg-shine 2.4s linear infinite;
+  }
+  @keyframes tg-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  .animate-spin-slow {
+    animation: tg-spin 2.6s linear infinite;
+  }
+  .ring-gradient {
+    background: var(--gradient-ring);
+  }
+  @keyframes tg-rise {
+    from {
+      opacity: 0;
+      transform: translateY(12px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .surface-card {
+    animation: tg-rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  .space-y-4 > .surface-card:nth-child(2),
+  .space-y-4 > *:nth-child(2) .surface-card {
+    animation-delay: 60ms;
+  }
+  .space-y-4 > .surface-card:nth-child(3) {
+    animation-delay: 120ms;
+  }
+  .space-y-4 > .surface-card:nth-child(4) {
+    animation-delay: 180ms;
+  }
+  @keyframes tg-glow-pulse {
+    0%,
+    100% {
+      box-shadow: 0 10px 34px -12px oklch(0.8 0.17 82 / 55%);
+    }
+    50% {
+      box-shadow: 0 10px 44px -6px oklch(0.75 0.2 50 / 75%);
+    }
+  }
+  .glow-gold {
+    animation: tg-glow-pulse 2.8s ease-in-out infinite;
+  }
+  @keyframes tg-wiggle {
+    0%,
+    100% {
+      transform: rotate(0);
+    }
+    25% {
+      transform: rotate(-10deg);
+    }
+    75% {
+      transform: rotate(10deg);
+    }
+  }
+  .animate-wiggle {
+    display: inline-block;
+    animation: tg-wiggle 1.6s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .surface-card,
+    .glow-gold,
+    .animate-float,
+    .animate-wiggle,
+    .animate-spin-slow {
+      animation: none;
+    }
   }
 }

@@ -126,7 +126,11 @@ function Shell() {
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-md flex-col">
       <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-border/60 bg-background/85 px-4 py-3 backdrop-blur">
-        <img src="/tigorix-logo.png" alt="Tigorix logo" className="size-9 rounded-full" />
+        <img
+          src="/tigorix-logo.png"
+          alt="Tigorix logo"
+          className="size-10 rounded-full object-cover ring-2 ring-primary/60"
+        />
         <div className="min-w-0">
           <p className="truncate text-sm font-extrabold leading-tight">
             {state.user.username ? `@${state.user.username}` : state.user.firstName || "Tiger"}
@@ -172,8 +176,8 @@ function Shell() {
                 onClick={() => setTab(id)}
                 className={
                   center
-                    ? `-mt-7 flex flex-col items-center gap-1 rounded-2xl px-4 py-2.5 text-[10px] font-extrabold ${active ? "bg-gold-gradient glow-gold text-primary-foreground" : "border border-primary/40 bg-secondary/70 text-primary"}`
-                    : `flex flex-col items-center gap-1 px-3 py-1.5 text-[10px] font-bold ${active ? "text-primary" : "text-muted-foreground"}`
+                    ? `-mt-7 flex flex-col items-center gap-1 rounded-2xl px-4 py-2.5 text-[10px] font-extrabold ${active ? "bg-ember-gradient glow-gold text-primary-foreground scale-105" : "bg-gold-gradient text-primary-foreground opacity-90"} transition-transform`
+                    : `flex flex-col items-center gap-1 px-3 py-1.5 text-[10px] font-bold transition-all ${active ? "-translate-y-0.5 text-primary" : "text-muted-foreground"}`
                 }
               >
                 <Icon className={center ? "size-7" : "size-5"} />
