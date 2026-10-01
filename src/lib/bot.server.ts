@@ -58,7 +58,13 @@ export async function forceTelegramWebhook(origin: string) {
   });
   if (set) registeredWebhookOrigin = cleanOrigin;
   const info = await tg("getWebhookInfo", {});
-  return { ok: !!set, info: (info?.result ?? null) as Record<string, unknown> | null };
+  const r = (info?.result ?? {}) as { url?: string; last_error_message?: string; pending_update_count?: number };
+  return {
+    ok: !!set,
+    url: String(r.url ?? ""),
+    lastError: String(r.last_error_message ?? ""),
+    pending: Number(r.pending_update_count ?? 0),
+  };
 }
 
 export async function tg(method: string, body: Record<string, unknown>) {
