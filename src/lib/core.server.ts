@@ -1,6 +1,15 @@
 /** Tigorix business logic. Server only — never imported by the browser. */
 import { APP, DAILY_REWARDS, utcDayKey } from "./config";
-import { getDoc, setDoc, deleteDoc, queryDocs } from "./fsdb.server";
+import {
+  getDoc,
+  setDoc,
+  deleteDoc,
+  queryDocs,
+  createDoc,
+  incrField,
+  ledgerCredit,
+  ledgerSum,
+} from "./fsdb.server";
 import { btn, isChannelMember, notifyAdmin, sendMessage, sendPhoto } from "./bot.server";
 import type { AuthUser } from "./bot.server";
 
@@ -44,6 +53,9 @@ export type Cfg = {
   tokensPerUsd: number;
   adminPassword: string;
   maintenance: boolean;
+  withdrawEnabled: boolean;
+  minAdGapSec: number;
+  maintenanceText: string;
 };
 
 const DEFAULT_CFG: Cfg = {
@@ -64,7 +76,7 @@ const DEFAULT_CFG: Cfg = {
   intAdsDailyCap: 10,
   rewardAdReward: 5,
   rewardAdsDailyCap: 10,
-  gigaBlockId: "",
+  gigaBlockId: "7844",
   gigaAdReward: 20,
   gigaAdsDailyCap: 10,
   monetagBlockId: "11632109",
@@ -86,6 +98,9 @@ const DEFAULT_CFG: Cfg = {
   tokensPerUsd: APP.tokensPerUsd,
   adminPassword: "Aabbcc.123",
   maintenance: false,
+  withdrawEnabled: true,
+  minAdGapSec: 8,
+  maintenanceText: "",
 };
 
 let cfgCache: { value: Cfg; expiresAt: number } | null = null;
@@ -168,6 +183,7 @@ export type UserDoc = {
   device: string;
   notifications: boolean;
   language: string;
+  lastAdAt?: number;
 };
 
 function blankUser(a: AuthUser): UserDoc {
@@ -223,41 +239,20 @@ export function isAdmin(id: string) {
 /* ------------------------------- ledger -------------------------------- */
 
 export async function credit(user: UserDoc, amount: number, type: string, note = "") {
-  const balance = Math.max(0, Math.round(user.balance + amount));
-  const totalEarned = user.totalEarned + Math.max(0, amount);
-  await setDoc(`users/${user.id}`, { balance, totalEarned });
-  await setDoc(`transactions/${user.id}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, {
-    userId: user.id,
-    type,
-    amount,
-    note,
-    at: Date.now(),
-    balanceAfter: balance,
-  });
+  const delta = Math.round(amount);
+  if (!Number.isFinite(delta) || delta === 0) return user.balance;
+  const balance = await ledgerCredit(user.id, delta, type, note);
   user.balance = balance;
-  user.totalEarned = totalEarned;
+  if (delta > 0 && type !== "withdraw_refund" && type !== "admin_adjust")
+    user.totalEarned = (user.totalEarned ?? 0) + delta;
   return balance;
 }
 
-/** Recomputes the balance from the ledger; auto-suspends on mismatch. */
+/** True when the stored balance matches the full transaction ledger. */
 export async function auditBalance(user: UserDoc) {
-  const tx = await queryDocs<{ amount: number }>("transactions", {
-    where: [{ field: "userId", op: "EQUAL", value: user.id }],
-    limit: 1000,
-  });
-
-  // No transaction history = nothing to audit
-  if (!tx.length) return true;
-
-  const expected = tx.reduce(
-    (sum, t) => sum + Number(t.amount ?? 0),
-    0
-  );
-
-  const actual = Number(user.balance ?? 0);
-
-  // Small rounding difference is acceptable
-  return Math.abs(expected - actual) <= 1;
+  const { total, entries } = await ledgerSum(user.id);
+  if (!entries) return Math.abs(Number(user.balance ?? 0)) <= 1;
+  return Math.abs(total - Number(user.balance ?? 0)) <= 1;
 }
 
 export async function suspend(user: UserDoc, reason: string) {
@@ -289,7 +284,15 @@ export async function ensureUser(
   meta: { ip: string; device: string; ref: string; origin: string }
 ) {
   let user = await loadUser(auth);
-  const isNew = !user;
+  // Atomic: only ONE request may ever create a given account (no double referral).
+  const isNew = !user && (await createDoc(`userInit/${auth.id}`, { at: Date.now() }));
+  if (!user && !isNew) {
+    for (let i = 0; i < 10 && !user; i++) {
+      await new Promise((r) => setTimeout(r, 300));
+      user = await loadUser(auth);
+    }
+    if (!user) throw new Error("⏳ Your account is being created — please reopen the app.");
+  }
 
   if (!user) {
     user = blankUser(auth);
@@ -319,7 +322,11 @@ export async function ensureUser(
     if (refId && refId !== auth.id) {
       const referrer = await getDoc<UserDoc>(`users/${refId}`);
       if (referrer) {
-        const fraud = user.suspended || referrer.ip === meta.ip || referrer.device === meta.device;
+        const fraud =
+          user.suspended ||
+          !!referrer.suspended ||
+          (!!meta.ip && referrer.ip === meta.ip) ||
+          (!!meta.device && referrer.device === meta.device);
         user.refBy = refId;
         const cfg = await getCfg();
         await setDoc(`referrals/${auth.id}`, {
@@ -335,10 +342,8 @@ export async function ensureUser(
           day2Paid: false,
           createdAt: Date.now(),
         });
-        await setDoc(`users/${refId}`, {
-          refCount: (referrer.refCount ?? 0) + 1,
-          refEarnPending: (referrer.refEarnPending ?? 0) + (fraud ? 0 : cfg.refJoin),
-        });
+        await incrField(`users/${refId}`, "refCount", 1);
+        if (!fraud) await incrField(`users/${refId}`, "refEarnPending", cfg.refJoin);
         if (!fraud && referrer.notifications !== false) {
           await sendMessage(
             refId,
@@ -369,9 +374,8 @@ export async function ensureUser(
     user.firstName = auth.firstName;
     user.photoUrl = auth.photoUrl;
     user.lastSeen = Date.now();
-    if (!user.suspended) await auditBalance(user);
   }
-  return { user, isNew };
+  return { user, isNew: !!isNew };
 }
 
 /* -------------------------------- mining ------------------------------- */
@@ -415,6 +419,8 @@ export async function claimMining(user: UserDoc, cfg: Cfg) {
   assertActive(user);
   const state = miningState(user, cfg);
   if (state.status !== "claimable") throw new Error("⏳ Mining is not finished yet.");
+  if (!(await createDoc(`miningClaims/${user.id}_${user.miningStart}`, { at: Date.now() })))
+    throw new Error("✅ This mining session was already claimed.");
   await setDoc(`users/${user.id}`, { miningStart: 0, miningClaimed: true, miningNotified: true });
   user.miningStart = 0;
   user.miningClaimed = true;
@@ -479,6 +485,8 @@ export async function claimDaily(user: UserDoc) {
   if (state.claimedToday) throw new Error("🎁 Daily reward already claimed. Come back after 00:00 UTC.");
   const day = state.nextDay;
   const reward = DAILY_REWARDS[day - 1] ?? DAILY_REWARDS[0]!;
+  if (!(await createDoc(`dailyClaims/${user.id}_${utcDayKey()}`, { day, reward, at: Date.now() })))
+    throw new Error("🎁 Daily reward already claimed. Come back after 00:00 UTC.");
   await setDoc(`users/${user.id}`, { dailyStreak: day >= 7 ? 0 : day, dailyLast: utcDayKey() });
   user.dailyStreak = day >= 7 ? 0 : day;
   user.dailyLast = utcDayKey();
@@ -548,7 +556,10 @@ export async function claimDailyTask(user: UserDoc, cfg: Cfg, key: string) {
     throw new Error("Unknown task");
   }
 
-  await setDoc(`dailyTaskClaims/${id}`, { userId: user.id, key, day: today, at: Date.now(), reward });
+  if (
+    !(await createDoc(`dailyTaskClaims/${id}`, { userId: user.id, key, day: today, at: Date.now(), reward }))
+  )
+    throw new Error("✅ Already claimed today.");
   await credit(user, reward, "daily_task", `Daily task: ${key}`);
   return { reward, balance: user.balance };
 }
@@ -568,12 +579,15 @@ export async function claimTask(user: UserDoc, taskId: string, openedAt: number)
     throw new Error("⏱ Please stay on the link for at least 5 seconds.");
   }
 
-  await setDoc(`taskClaims/${claimId}`, {
-    userId: user.id,
-    taskId,
-    reward: task.reward,
-    at: Date.now(),
-  });
+  if (
+    !(await createDoc(`taskClaims/${claimId}`, {
+      userId: user.id,
+      taskId,
+      reward: task.reward,
+      at: Date.now(),
+    }))
+  )
+    throw new Error("✅ Task already completed.");
   await credit(user, task.reward, "task", task.title);
   return { reward: task.reward, balance: user.balance };
 }
@@ -704,6 +718,9 @@ export async function recordAdView(user: UserDoc, cfg: Cfg, network: AdNetwork) 
   const cap = Math.max(0, Number(cfg[meta.cap] ?? 0));
   const reward = Math.max(0, Number(cfg[meta.reward] ?? 0));
   const seenToday = netCount(user, network);
+  const gap = Math.max(0, Number(cfg.minAdGapSec ?? 8)) * 1000;
+  if (gap && Date.now() - Number(user.lastAdAt ?? 0) < gap)
+    throw new Error("⏳ Too fast — please wait a few seconds before the next ad.");
   if (seenToday >= cap)
     throw new Error(
       `📺 Daily limit reached for this ad block (${cap}). Come back after 00:00 UTC.`
@@ -717,6 +734,7 @@ export async function recordAdView(user: UserDoc, cfg: Cfg, network: AdNetwork) 
     adsTotal: (user.adsTotal ?? 0) + 1,
     [dayKey]: today,
     [count]: seenToday + 1,
+    lastAdAt: Date.now(),
   };
   await setDoc(`users/${user.id}`, patch);
   const mutable = user as unknown as Record<string, unknown>;
@@ -725,6 +743,7 @@ export async function recordAdView(user: UserDoc, cfg: Cfg, network: AdNetwork) 
   user.adsDayKey = today;
   user.adsToday = adsTodayTotal + 1;
   user.adsTotal = (user.adsTotal ?? 0) + 1;
+  user.lastAdAt = Date.now();
 
   if (reward > 0) await credit(user, reward, "ad", `${meta.label} ad view`);
   await advanceReferral(user, cfg);
@@ -754,13 +773,26 @@ export async function advanceReferral(user: UserDoc, cfg: Cfg) {
     day2Ads: number;
     day1Paid: boolean;
     day2Paid: boolean;
+    day1Day?: string;
+    day2Day?: string;
     createdAt: number;
   }>(`referrals/${user.id}`);
-  if (!ref || ref.fake) return;
+  if (!ref || ref.fake || user.suspended) return;
   if (ref.day1Paid && ref.day2Paid) return;
+  const today = utcDayKey();
   const patch: Record<string, unknown> = {};
-  if (!ref.day1Paid) patch["day1Ads"] = (ref.day1Ads ?? 0) + 1;
-  else patch["day2Ads"] = (ref.day2Ads ?? 0) + 1;
+  if (!ref.day1Paid) {
+    // Day 1 = the first UTC day the friend watches ads; progress resets if they skip to another day.
+    const sameDay = !ref.day1Day || ref.day1Day === today;
+    patch["day1Day"] = today;
+    patch["day1Ads"] = (sameDay ? (ref.day1Ads ?? 0) : 0) + 1;
+  } else {
+    // Day 2 only counts on a LATER UTC day than the day-1 milestone.
+    if (!ref.day1Day || ref.day1Day >= today) return;
+    const sameDay = !ref.day2Day || ref.day2Day === today;
+    patch["day2Day"] = today;
+    patch["day2Ads"] = (sameDay ? (ref.day2Ads ?? 0) : 0) + 1;
+  }
   const day1 = Number(patch["day1Ads"] ?? ref.day1Ads ?? 0);
   const day2 = Number(patch["day2Ads"] ?? ref.day2Ads ?? 0);
 
@@ -780,12 +812,9 @@ export async function advanceReferral(user: UserDoc, cfg: Cfg) {
   await setDoc(`referrals/${user.id}`, patch);
   if (bonus <= 0) return;
   const referrer = await getDoc<UserDoc>(`users/${ref.referrer}`);
-  if (!referrer) return;
-  await setDoc(`users/${ref.referrer}`, {
-    refEarnPending: (referrer.refEarnPending ?? 0) + bonus,
-    refActive:
-      patch["day2Paid"] === true ? (referrer.refActive ?? 0) + 1 : (referrer.refActive ?? 0),
-  });
+  if (!referrer || referrer.suspended) return;
+  await incrField(`users/${ref.referrer}`, "refEarnPending", bonus);
+  if (patch["day2Paid"] === true) await incrField(`users/${ref.referrer}`, "refActive", 1);
   if (referrer.notifications !== false) {
     const stage =
       patch["day2Paid"] === true
@@ -829,10 +858,8 @@ export async function claimReferralEarnings(user: UserDoc) {
   assertActive(user);
   const amount = Math.floor(user.refEarnPending ?? 0);
   if (amount <= 0) throw new Error("👥 No referral rewards to claim yet.");
-  await setDoc(`users/${user.id}`, {
-    refEarnPending: 0,
-    refEarnClaimed: (user.refEarnClaimed ?? 0) + amount,
-  });
+  await incrField(`users/${user.id}`, "refEarnPending", -amount);
+  await incrField(`users/${user.id}`, "refEarnClaimed", amount);
   user.refEarnPending = 0;
   user.refEarnClaimed = (user.refEarnClaimed ?? 0) + amount;
   await credit(user, amount, "referral", "Referral rewards claim");
@@ -852,10 +879,27 @@ export async function redeemCode(user: UserDoc, rawCode: string) {
   if (doc.maxUses && (doc.uses ?? 0) >= doc.maxUses) throw new Error("❌ This code is fully used.");
   const claimId = `${user.id}_${code}`;
   if (await getDoc(`codeClaims/${claimId}`)) throw new Error("✅ You already used this code.");
-  await setDoc(`codeClaims/${claimId}`, { userId: user.id, code, at: Date.now() });
-  await setDoc(`codes/${code}`, { uses: (doc.uses ?? 0) + 1 });
+  if (!(await createDoc(`codeClaims/${claimId}`, { userId: user.id, code, at: Date.now() })))
+    throw new Error("✅ You already used this code.");
+  const uses = await incrField(`codes/${code}`, "uses", 1);
+  if (doc.maxUses && uses > doc.maxUses) {
+    await incrField(`codes/${code}`, "uses", -1);
+    await deleteDoc(`codeClaims/${claimId}`);
+    throw new Error("❌ This code is fully used.");
+  }
   await credit(user, doc.reward, "code", `Reward code ${code}`);
   return { reward: doc.reward, balance: user.balance };
+}
+
+/* ------------------------------ preferences ---------------------------- */
+
+export async function setPrefs(user: UserDoc, prefs: { language?: string; notifications?: boolean }) {
+  const patch: Record<string, unknown> = {};
+  if (typeof prefs.language === "string" && /^(en|ru|hi|bn)$/.test(prefs.language))
+    patch["language"] = prefs.language;
+  if (typeof prefs.notifications === "boolean") patch["notifications"] = prefs.notifications;
+  if (Object.keys(patch).length) await setDoc(`users/${user.id}`, patch);
+  return { ok: true, ...patch };
 }
 
 /* -------------------------------- wallet ------------------------------- */
@@ -971,6 +1015,8 @@ export async function withdrawEligibility(user: UserDoc, cfg: Cfg): Promise<With
 
 export async function requestWithdraw(user: UserDoc, cfg: Cfg, tokens: number) {
   assertActive(user);
+  if (cfg.withdrawEnabled === false)
+    throw new Error("⏸ Withdrawals are temporarily paused. Please try again later.");
   const amount = Math.floor(tokens);
   const min = (user.withdrawCount ?? 0) === 0 ? cfg.minWithdrawFirst : cfg.minWithdrawNext;
   if (!user.wallet) throw new Error("💳 Set your USDT BEP-20 wallet first.");
@@ -1152,6 +1198,19 @@ export async function adminOverview() {
           };
         })
     ),
+    suspendedUsers: users
+      .filter((u) => u.suspended)
+      .sort((a, b) => (b.lastSeen ?? 0) - (a.lastSeen ?? 0))
+      .slice(0, 200)
+      .map((u) => ({
+        id: u.id,
+        name: label(u),
+        balance: u.balance ?? 0,
+        reason: u.suspendReason ?? "",
+        refs: u.refCount ?? 0,
+        createdAt: u.createdAt ?? 0,
+        lastSeen: u.lastSeen ?? 0,
+      })),
     tasks,
     codes,
     sites,
@@ -1175,6 +1234,8 @@ export async function decideWithdraw(
   }>(`withdrawals/${id}`);
   if (!w) throw new Error("Withdrawal not found");
   if (w.status !== "pending") throw new Error("Already processed");
+  if (!(await createDoc(`withdrawDecisions/${id}`, { approve, at: Date.now() })))
+    throw new Error("Already processed");
   const user = await getDoc<UserDoc>(`users/${w.userId}`);
 
   if (!approve) {
@@ -1194,7 +1255,7 @@ export async function decideWithdraw(
     decidedAt: Date.now(),
   });
   if (user) {
-    await setDoc(`users/${w.userId}`, { totalPaidUsd: (user.totalPaidUsd ?? 0) + w.netUsd });
+    await incrField(`users/${w.userId}`, "totalPaidUsd", w.netUsd);
   }
   const txUrl = txId ? `https://bscscan.com/tx/${txId}` : APP.paymentChannel;
   const userMsg =
@@ -1214,13 +1275,17 @@ export async function decideWithdraw(
     [[{ text: "🔎 View Transaction", url: txUrl }]]
   );
   const post =
-    `🎉 <b>New withdrawal approved</b>\n\n` +
-    `👤 User: <b>${w.name}</b>\n` +
-    `🔢 Number: <b>#${w.number}</b>\n` +
-    `🪙 Amount: <b>${w.tokens} ${APP.tokenName}</b>\n` +
-    `🧾 Withdraw fee: <b>$${w.feeUsd.toFixed(4)}</b>\n` +
-    `💵 Net: <b>$${w.netUsd.toFixed(4)}</b>\n` +
-    `🚦 Status: <b>success</b>`;
+    `🎉🐯 <b>NEW WITHDRAWAL APPROVED</b> 🐯🎉\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `👤 <b>User:</b> ${w.name}\n` +
+    `🔢 <b>Withdrawal:</b> #${w.number}\n` +
+    `🪙 <b>Amount:</b> ${w.tokens.toLocaleString("en-US")} ${APP.tokenName}\n` +
+    `🧾 <b>Fee:</b> $${w.feeUsd.toFixed(4)}\n` +
+    `💵 <b>Net paid:</b> $${w.netUsd.toFixed(4)} USDT\n` +
+    `⛓ <b>Network:</b> BEP-20 (BSC)\n` +
+    `✅ <b>Status:</b> SUCCESS\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `💎 Real users. Real payouts. Start earning now! 🚀`;
   const posted = await sendMessage(APP.paymentChatId, post, [
     [{ text: "🔎 View Transaction", url: txUrl }],
     [btn.miniApp],
@@ -1250,6 +1315,9 @@ export async function adminSetUser(
     await credit(user, delta, "admin_adjust", "Admin balance adjustment");
   }
   if (Object.keys(update).length) await setDoc(`users/${userId}`, update);
+  // Unsuspending also repairs the stored balance to the ledger so the
+  // automatic audit does not instantly suspend the account again.
+  if (patch.suspended === false) await adminFixBalance(userId);
   return { ok: true };
 }
 
@@ -1326,17 +1394,11 @@ export type LedgerAudit = {
 
 /** Recomputes a user's balance from the transaction ledger. */
 export async function ledgerAudit(userId: string): Promise<LedgerAudit> {
-  const [tx, user] = await Promise.all([
-    queryDocs<{ amount: number }>("transactions", {
-      where: [{ field: "userId", op: "EQUAL", value: userId }],
-      limit: 1000,
-    }),
-    getDoc<UserDoc>(`users/${userId}`),
-  ]);
-  const ledger = tx.reduce((sum, t) => sum + (t.amount ?? 0), 0);
+  const [sum, user] = await Promise.all([ledgerSum(userId), getDoc<UserDoc>(`users/${userId}`)]);
+  const ledger = sum.total;
   const balance = user?.balance ?? 0;
   const diff = balance - ledger;
-  return { ledger, balance, diff, ok: Math.abs(diff) <= 1, entries: tx.length };
+  return { ledger, balance, diff, ok: Math.abs(diff) <= 1, entries: sum.entries };
 }
 
 /** Rewrites the stored balance to match the ledger (admin repair action). */

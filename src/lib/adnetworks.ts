@@ -8,8 +8,8 @@
  */
 import { showAdsgramAd } from "./adsgram";
 
-/** Reward is issued only after the ad has remained open for at least 10 seconds. */
-export const MIN_WATCH_MS = 10_000;
+/** No minimum watch time: the reward is granted as soon as the network reports the ad finished. */
+export const MIN_WATCH_MS = 0;
 
 export type AdNet = "int" | "reward" | "giga" | "monetag" | "bitvex";
 
@@ -47,10 +47,13 @@ async function showGigaAd(id: string): Promise<boolean> {
       return s;
     });
   }
-  const fn = W()["showGiga"] as ((slot: string) => Promise<unknown>) | undefined;
+  // The SDK can register its global slightly after onload.
+  for (let i = 0; i < 20 && typeof W()["showGiga"] !== "function"; i++)
+    await new Promise((r) => setTimeout(r, 100));
+  const fn = W()["showGiga"] as (() => Promise<unknown>) | undefined;
   if (typeof fn !== "function") return false;
   try {
-    await fn("main");
+    await fn();
     return true;
   } catch {
     return false;
@@ -110,7 +113,11 @@ async function showBitvexAd(appId: string): Promise<boolean> {
   const fn = pick();
   if (!fn) return false;
   try {
-    await fn();
+    // Never hang forever if the SDK never settles.
+    await Promise.race([
+      fn(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 120_000)),
+    ]);
     return true;
   } catch {
     return false;
@@ -147,6 +154,6 @@ export async function showAd(
 }
 
 export function adErrorMessage(r: AdResult) {
-  if (r.reason === "short") return "⏱ Watch the full ad (at least 10 seconds) to get the reward.";
+  if (r.reason === "short") return "⏱ Watch the full ad to get the reward.";
   return "📺 No ad available right now — please try again in a moment.";
 }

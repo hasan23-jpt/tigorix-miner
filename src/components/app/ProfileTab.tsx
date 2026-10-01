@@ -15,15 +15,17 @@ import {
 } from "lucide-react";
 import { APP, fmt } from "@/lib/config";
 import { openLink } from "@/lib/telegram";
-import { doSetWallet, doWithdraw, getFinance, getLeaderboard } from "@/lib/api.functions";
+import { doSetPrefs, doSetWallet, doWithdraw, getFinance, getLeaderboard } from "@/lib/api.functions";
+import { LANGS, useI18n } from "@/lib/i18n";
 import { useAppState } from "./useApp";
 import { useAdGate } from "./useAdGate";
 import { Card, Field, GhostButton, GoldButton, Guide, Pill, SectionTitle, Stat } from "./ui";
 
-type View = "root" | "wallet" | "transactions" | "leaderboard" | "about";
+type View = "root" | "wallet" | "transactions" | "leaderboard" | "about" | "language";
 
 export function ProfileTab({ onOpenAdmin }: { onOpenAdmin: () => void }) {
-  const { state } = useAppState();
+  const { state, auth, run } = useAppState();
+  const { t, lang } = useI18n();
   const [view, setView] = useState<View>("root");
 
   if (view !== "root") {
@@ -33,12 +35,13 @@ export function ProfileTab({ onOpenAdmin }: { onOpenAdmin: () => void }) {
           onClick={() => setView("root")}
           className="flex items-center gap-1.5 text-xs font-bold text-primary"
         >
-          <ArrowLeft className="size-4" /> Back to profile
+          <ArrowLeft className="size-4" /> {t("back")}
         </button>
         {view === "wallet" && <WalletView />}
         {view === "transactions" && <TransactionsView />}
         {view === "leaderboard" && <LeaderboardView />}
         {view === "about" && <AboutView />}
+        {view === "language" && <LanguageView onDone={() => setView("root")} />}
       </div>
     );
   }
@@ -75,22 +78,22 @@ export function ProfileTab({ onOpenAdmin }: { onOpenAdmin: () => void }) {
         </div>
       </Card>
 
-      <Group title="💼 Finance">
-        <Row icon={<WalletIcon className="size-4" />} label="Wallet & Withdraw" onClick={() => setView("wallet")} />
-        <Row icon={<Receipt className="size-4" />} label="Transactions" onClick={() => setView("transactions")} />
+      <Group title={`💼 ${t("finance")}`}>
+        <Row icon={<WalletIcon className="size-4" />} label={t("walletWithdraw")} onClick={() => setView("wallet")} />
+        <Row icon={<Receipt className="size-4" />} label={t("transactions")} onClick={() => setView("transactions")} />
       </Group>
 
-      <Group title="🌍 Social">
-        <Row icon={<Users className="size-4" />} label="Refer Friends" onClick={() => openLink(`https://t.me/share/url?url=${encodeURIComponent(`${APP.miniAppLink}?startapp=${user.id}`)}`)} />
-        <Row icon={<Trophy className="size-4" />} label="Leaderboard" onClick={() => setView("leaderboard")} />
+      <Group title={`🌍 ${t("social")}`}>
+        <Row icon={<Users className="size-4" />} label={t("referFriends")} onClick={() => openLink(`https://t.me/share/url?url=${encodeURIComponent(`${APP.miniAppLink}?startapp=${user.id}`)}`)} />
+        <Row icon={<Trophy className="size-4" />} label={t("leaderboard")} onClick={() => setView("leaderboard")} />
       </Group>
 
-      <Group title="📣 Community">
-        <Row icon={<MessageCircle className="size-4" />} label="Community Channel" onClick={() => openLink(APP.communityChannel)} />
-        <Row icon={<Globe2 className="size-4" />} label="Payment Channel" onClick={() => openLink(APP.paymentChannel)} />
+      <Group title={`📣 ${t("community")}`}>
+        <Row icon={<MessageCircle className="size-4" />} label={t("communityChannel")} onClick={() => openLink(APP.communityChannel)} />
+        <Row icon={<Globe2 className="size-4" />} label={t("paymentChannel")} onClick={() => openLink(APP.paymentChannel)} />
         <Row
           icon={<Receipt className="size-4" />}
-          label="Payout Proofs (public)"
+          label={t("payoutProofs")}
           onClick={() =>
             openLink(
               typeof window === "undefined" ? APP.paymentChannel : `${window.location.origin}/payouts`
@@ -99,10 +102,25 @@ export function ProfileTab({ onOpenAdmin }: { onOpenAdmin: () => void }) {
         />
       </Group>
 
-      <Group title="⚙️ Preferences">
-        <Row icon={<Bell className="size-4" />} label="Notifications" value={user.notifications ? "On" : "Off"} />
-        <Row icon={<Languages className="size-4" />} label="Language" value={(user.language || "en").toUpperCase()} />
-        <Row icon={<Info className="size-4" />} label="About Tigorix" onClick={() => setView("about")} />
+      <Group title={`⚙️ ${t("preferences")}`}>
+        <Row
+          icon={<Bell className="size-4" />}
+          label={t("notifications")}
+          value={user.notifications ? `🔔 ${t("on")}` : `🔕 ${t("off")}`}
+          onClick={() =>
+            void run(
+              () => doSetPrefs({ data: { initData: auth, notifications: !user.notifications } }),
+              () => (user.notifications ? "🔕 Notifications off" : "🔔 Notifications on")
+            )
+          }
+        />
+        <Row
+          icon={<Languages className="size-4" />}
+          label={t("language")}
+          value={`${LANGS.find((l) => l.code === lang)?.flag ?? ""} ${LANGS.find((l) => l.code === lang)?.label ?? "English"}`}
+          onClick={() => setView("language")}
+        />
+        <Row icon={<Info className="size-4" />} label={t("about")} onClick={() => setView("about")} />
       </Group>
 
       {state.admin && (
@@ -363,22 +381,152 @@ function LeaderboardView() {
   );
 }
 
-function AboutView() {
+function LanguageView({ onDone }: { onDone: () => void }) {
+  const { lang, setLang, t } = useI18n();
+  const { auth } = useAppState();
   return (
     <Card>
-      <SectionTitle icon="ℹ️" title="About Tigorix" />
-      <div className="space-y-2 text-xs text-muted-foreground">
-        <p>
-          🐯 <b className="text-foreground">Tigorix</b> — Earn • Play • Grow. Mine {APP.tokenName}{" "}
-          tokens, complete tasks, invite friends and withdraw in USDT (BEP-20).
-        </p>
-        <p>🤖 Bot: @{APP.botUsername}</p>
-        <p>📣 Community: {APP.communityChannel}</p>
-        <p>💸 Payments: {APP.paymentChannel}</p>
-        <p>🛡 Anti-fraud: one account per device/IP, ledger-verified balances.</p>
-        <p>Version 1.0</p>
+      <SectionTitle icon="🌐" title={t("chooseLanguage")} />
+      <div className="grid gap-2">
+        {LANGS.map((l) => (
+          <button
+            key={l.code}
+            onClick={() => {
+              setLang(l.code);
+              void doSetPrefs({ data: { initData: auth, language: l.code } }).catch(() => undefined);
+              onDone();
+            }}
+            className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-bold transition active:scale-[0.98] ${
+              lang === l.code ? "border-primary bg-primary/15 text-primary" : "border-border bg-background/40"
+            }`}
+          >
+            <span className="text-xl">{l.flag}</span>
+            {l.label}
+            {lang === l.code && <span className="ml-auto">✅</span>}
+          </button>
+        ))}
       </div>
     </Card>
+  );
+}
+
+function AboutView() {
+  const { boot } = useAppState();
+  const c = boot.cfg;
+  const sections: { icon: string; title: string; body: React.ReactNode }[] = [
+    {
+      icon: "🐯",
+      title: "What is Tigorix?",
+      body: (
+        <>
+          Tigorix is a Telegram mini app where you earn <b>{APP.tokenName}</b> tokens every day by
+          mining, completing tasks, watching ads and inviting friends — then withdraw them as real
+          USDT (BEP-20).
+        </>
+      ),
+    },
+    {
+      icon: "🪙",
+      title: "The TGX token",
+      body: (
+        <>
+          {fmt(c.tokensPerUsd)} {APP.tokenName} = $1 USDT. Every token you earn is recorded in your
+          personal ledger, so your balance is always verifiable.
+        </>
+      ),
+    },
+    {
+      icon: "⛏",
+      title: "Mining",
+      body: (
+        <>
+          Start a session and earn {fmt(c.miningReward)} {APP.tokenName} per hour. When the session
+          ends the bot notifies you — claim it and start again.
+        </>
+      ),
+    },
+    {
+      icon: "🎁",
+      title: "Daily reward & codes",
+      body: (
+        <>
+          Claim a daily bonus that grows for 7 days in a row (30 → 150 {APP.tokenName}). Missing a
+          day restarts the streak. Daily resets happen at 00:00 UTC. Reward codes are posted in our
+          community channel.
+        </>
+      ),
+    },
+    {
+      icon: "👥",
+      title: "Referrals",
+      body: (
+        <>
+          Friend joins → {fmt(c.refJoin)} · Day 1 ({c.day1Ads} ads) → {fmt(c.refDay1)} · Day 2 (
+          {c.day2Ads} ads) → {fmt(c.refDay2)}. Total {fmt(c.refJoin + c.refDay1 + c.refDay2)}{" "}
+          {APP.tokenName} per real friend. Fake or duplicate accounts never pay.
+        </>
+      ),
+    },
+    {
+      icon: "💸",
+      title: "Withdrawals",
+      body: (
+        <>
+          USDT BEP-20. First withdrawal from {fmt(c.minWithdrawFirst)} {APP.tokenName}, then from{" "}
+          {fmt(c.minWithdrawNext)}. Fee ${c.feeFlatUsd} + {c.feePercent}%. One request every{" "}
+          {c.withdrawCooldownHours}h. Every approved payout is posted in the payment channel with
+          its transaction ID.
+        </>
+      ),
+    },
+    {
+      icon: "🛡",
+      title: "Fair play & security",
+      body: (
+        <>
+          One account per person, device and IP. Every action is verified on our servers and
+          balances are audited against your activity history. Cheating, multi-accounts or fake
+          referrals lead to automatic suspension.
+        </>
+      ),
+    },
+    {
+      icon: "📞",
+      title: "Contact",
+      body: (
+        <>
+          Bot: @{APP.botUsername} · Community: {APP.communityChannel} · Payments:{" "}
+          {APP.paymentChannel}
+        </>
+      ),
+    },
+  ];
+  return (
+    <div className="space-y-3">
+      <Card className="text-center">
+        <img
+          src="/tigorix-logo.png"
+          alt="Tigorix logo"
+          className="mx-auto size-20 animate-float rounded-full ring-4 ring-primary/40"
+        />
+        <h2 className="mt-3 text-xl font-black">
+          <span className="text-gold-gradient">TIGORIX</span>
+        </h2>
+        <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-muted-foreground">
+          Earn • Play • Grow
+        </p>
+        <p className="mt-2 text-[10px] text-muted-foreground">Version 2.0</p>
+      </Card>
+      {sections.map((s) => (
+        <Card key={s.title}>
+          <h3 className="mb-1 flex items-center gap-2 text-sm font-extrabold">
+            <span className="text-lg">{s.icon}</span>
+            {s.title}
+          </h3>
+          <p className="text-xs leading-relaxed text-muted-foreground">{s.body}</p>
+        </Card>
+      ))}
+    </div>
   );
 }
 function WithdrawGate({

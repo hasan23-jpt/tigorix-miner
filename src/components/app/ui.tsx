@@ -24,7 +24,7 @@ export function SectionTitle({
   return (
     <div className="mb-3 flex items-center justify-between">
       <h2 className="flex items-center gap-2 text-base font-extrabold tracking-tight">
-        <span className="text-lg">{icon}</span>
+        <span className="animate-wiggle text-lg">{icon}</span>
         {title}
       </h2>
       {action}
