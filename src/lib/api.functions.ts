@@ -10,6 +10,7 @@ import {
   listTasks,
   taskStatus,
   claimTask,
+  openTask,
   claimDailyTask,
   recordAdView,
   referralOverview,
@@ -260,6 +261,10 @@ export const doClaimTask = createServerFn({ method: "POST" })
   .inputValidator((d: Auth & { taskId: string; openedAt: number }) => d)
   .handler(async ({ data }) => act(data.initData, ({ user }) => claimTask(user, str(data.taskId, 60), num(data.openedAt))));
 
+export const doOpenTask = createServerFn({ method: "POST" })
+  .inputValidator((d: Auth & { taskId: string }) => d)
+  .handler(async ({ data }) => act(data.initData, ({ user }) => openTask(user, str(data.taskId, 60))));
+
 export const doClaimDailyTask = createServerFn({ method: "POST" })
   .inputValidator((d: Auth & { key: string }) => d)
   .handler(async ({ data }) => act(data.initData, ({ user, cfg }) => claimDailyTask(user, cfg, str(data.key, 20))));
@@ -394,6 +399,7 @@ export const adminTaskSave = createServerFn({ method: "POST" })
           chatId?: string;
           reward?: number;
           active?: boolean;
+          imageUrl?: string;
         };
       }
     ) => d

@@ -507,7 +507,22 @@ export type TaskDoc = {
   reward: number;
   active: boolean;
   createdAt: number;
+  imageUrl?: string;
 };
+
+/** Only allow direct https image links (ImgBB i.ibb.co and common image hosts). */
+export function safeImageUrl(raw: unknown): string {
+  const v = String(raw ?? "").trim().slice(0, 500);
+  if (!v) return "";
+  try {
+    const u = new URL(v);
+    if (u.protocol !== "https:") return "";
+    if (u.username || u.password) return "";
+    return u.toString();
+  } catch {
+    return "";
+  }
+}
 
 export async function listTasks() {
   const tasks = await queryDocs<TaskDoc>("tasks", { limit: 200 });
@@ -564,8 +579,19 @@ export async function claimDailyTask(user: UserDoc, cfg: Cfg, key: string) {
   return { reward, balance: user.balance };
 }
 
-export async function claimTask(user: UserDoc, taskId: string, openedAt: number) {
+/** Server-side record of when the user opened a task link (client time is never trusted). */
+export async function openTask(user: UserDoc, taskId: string) {
   assertActive(user);
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(taskId)) throw new Error("Invalid task.");
+  const path = `taskOpens/${user.id}_${taskId}`;
+  const prev = await getDoc<{ at: number }>(path);
+  if (!prev) await setDoc(path, { at: Date.now() });
+  return { ok: true };
+}
+
+export async function claimTask(user: UserDoc, taskId: string, _openedAt: number) {
+  assertActive(user);
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(taskId)) throw new Error("Invalid task.");
   const task = await getDoc<TaskDoc>(`tasks/${taskId}`);
   if (!task || task.active === false) throw new Error("Task is no longer available.");
   const claimId = `${user.id}_${taskId}`;
@@ -575,7 +601,9 @@ export async function claimTask(user: UserDoc, taskId: string, openedAt: number)
     const chatId = task.chatId || task.url.replace("https://t.me/", "@");
     const member = await isChannelMember(chatId, user.id);
     if (!member) throw new Error("📣 You are not a member yet. Join the channel and claim again.");
-  } else if (!openedAt || Date.now() - openedAt < 5000) {
+  } else if (
+    Date.now() - ((await getDoc<{ at: number }>(`taskOpens/${user.id}_${taskId}`))?.at ?? Date.now()) < 5000
+  ) {
     throw new Error("⏱ Please stay on the link for at least 5 seconds.");
   }
 
@@ -1322,7 +1350,7 @@ export async function adminSetUser(
 }
 
 export async function adminSaveTask(task: Partial<TaskDoc> & { id?: string }) {
-  const id = task.id || `t${Date.now()}`;
+  const id = /^[A-Za-z0-9_-]{1,40}$/.test(String(task.id ?? "")) ? String(task.id) : `t${Date.now()}`;
   await setDoc(`tasks/${id}`, {
     group: task.group ?? "main",
     kind: task.kind ?? "channel",
@@ -1330,7 +1358,8 @@ export async function adminSaveTask(task: Partial<TaskDoc> & { id?: string }) {
     description: task.description ?? "",
     url: task.url ?? "",
     chatId: task.chatId ?? "",
-    reward: Math.max(0, Math.floor(task.reward ?? 100)),
+    reward: Math.min(1_000_000, Math.max(0, Math.floor(Number(task.reward) || 0))),
+    imageUrl: safeImageUrl(task.imageUrl),
     active: task.active !== false,
     createdAt: task.createdAt ?? Date.now(),
   });

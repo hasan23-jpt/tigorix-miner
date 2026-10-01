@@ -359,6 +359,7 @@ function TasksAdmin({
     title: string;
     url: string;
     reward: number;
+    imageUrl?: string;
   }[];
   onDone: () => void;
 }) {
@@ -367,6 +368,7 @@ function TasksAdmin({
     title: "",
     url: "",
     chatId: "",
+    imageUrl: "",
     reward: "100",
     group: "main" as "main" | "partner",
     kind: "channel" as "channel" | "app",
@@ -384,6 +386,14 @@ function TasksAdmin({
             value={form.chatId}
             onChange={(e) => setForm({ ...form, chatId: e.target.value })}
           />
+          <Field
+            label="Logo image URL (ImgBB direct link, e.g. https://i.ibb.co/xxx/logo.png)"
+            value={form.imageUrl}
+            onChange={(e) => setForm({ ...form, imageUrl: e.target.value.trim() })}
+          />
+          {form.imageUrl && (
+            <img src={form.imageUrl} alt="" className="size-12 rounded-xl border border-border object-cover" />
+          )}
           <Field
             label="Reward"
             inputMode="numeric"
@@ -420,6 +430,7 @@ function TasksAdmin({
                         title: form.title,
                         url: form.url,
                         chatId: form.chatId,
+                        imageUrl: form.imageUrl,
                         reward: Number(form.reward || 0),
                         group: form.group,
                         kind: form.kind,
@@ -429,7 +440,7 @@ function TasksAdmin({
                   }),
                 () => "✅ Task saved"
               ).then(() => {
-                setForm({ ...form, title: "", url: "", chatId: "" });
+                setForm({ ...form, title: "", url: "", chatId: "", imageUrl: "" });
                 onDone();
               })
             }
@@ -455,6 +466,7 @@ function TasksAdmin({
                       title: t.title,
                       url: t.url,
                       chatId: "",
+                      imageUrl: t.imageUrl ?? "",
                       reward: String(t.reward),
                       group: t.group === "partner" ? "partner" : "main",
                       kind: t.kind === "app" ? "app" : "channel",

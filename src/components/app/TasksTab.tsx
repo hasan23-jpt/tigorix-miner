@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { APP } from "@/lib/config";
 import { openLink } from "@/lib/telegram";
-import { doClaimDailyTask, doClaimTask, getTasks } from "@/lib/api.functions";
+import { doClaimDailyTask, doClaimTask, doOpenTask, getTasks } from "@/lib/api.functions";
 import { useAppState } from "./useApp";
 import { Card, GhostButton, GoldButton, Guide, Pill, SectionTitle } from "./ui";
 
@@ -114,12 +114,12 @@ function DailyTasks({
     <Card>
       <SectionTitle icon="📅" title="Daily Tasks" action={<Pill tone="warn">Resets 00:00 UTC</Pill>} />
       <div className="space-y-3">
-        {tasks.map((t) => {
+        {[...tasks].sort((a, b) => Number(done.includes(a.key)) - Number(done.includes(b.key))).map((t) => {
           const claimed = done.includes(t.key);
           return (
             <div key={t.key} className="rounded-xl border border-border bg-background/40 p-3">
               <div className="flex items-start gap-2">
-                <span className="text-xl">{t.emoji}</span>
+                <TaskLogo src="/tigorix-logo.png" fallback={t.emoji} />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-bold">{t.title}</p>
                   <p className="text-[11px] text-muted-foreground">{t.desc}</p>
@@ -165,7 +165,26 @@ type Task = {
   description: string;
   url: string;
   reward: number;
+  imageUrl?: string;
 };
+
+function TaskLogo({ src, fallback }: { src?: string; fallback: string }) {
+  const [bad, setBad] = useState(false);
+  if (!src || bad)
+    return (
+      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/15 text-xl">{fallback}</span>
+    );
+  return (
+    <img
+      src={src}
+      alt=""
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => setBad(true)}
+      className="size-10 shrink-0 rounded-xl border border-border object-cover"
+    />
+  );
+}
 
 function TaskGroup({
   icon,
@@ -192,7 +211,7 @@ function TaskGroup({
         <p className="py-4 text-center text-xs text-muted-foreground">{empty}</p>
       ) : (
         <div className="space-y-3">
-          {tasks.map((t) => {
+          {[...tasks].sort((a, b) => Number(done.includes(a.id)) - Number(done.includes(b.id))).map((t) => {
             const claimed = done.includes(t.id);
             const openedAt = opened[t.id] ?? 0;
             const canClaim =
@@ -200,7 +219,7 @@ function TaskGroup({
             return (
               <div key={t.id} className="rounded-xl border border-border bg-background/40 p-3">
                 <div className="flex items-start gap-2">
-                  <span className="text-xl">{t.kind === "channel" ? "📢" : "🕹"}</span>
+                  <TaskLogo src={t.imageUrl} fallback={t.kind === "channel" ? "📢" : "🕹"} />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-bold">{t.title}</p>
                     {t.description && (
@@ -213,6 +232,7 @@ function TaskGroup({
                   <GhostButton
                     onClick={() => {
                       setOpened({ ...opened, [t.id]: Date.now() });
+                      void doOpenTask({ data: { initData: auth, taskId: t.id } }).catch(() => {});
                       openLink(t.url);
                     }}
                   >
