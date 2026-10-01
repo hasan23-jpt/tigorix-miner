@@ -109,3 +109,49 @@ export async function countDocs(collection: string, opts: QueryOpts = {}) {
   const rows = await queryDocs(collection, { ...opts, limit: opts.limit ?? 5000 });
   return rows.length;
 }
+
+/** Atomic balance change + ledger entry. Throws if the balance would go negative. */
+export async function ledgerCredit(
+  userId: string,
+  amount: number,
+  type: string,
+  note: string
+): Promise<number> {
+  const tid = `${userId}_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
+  try {
+    return Number(
+      await rpc<number>("ledger_credit", { uid: userId, amt: amount, t: type, note, tid })
+    );
+  } catch (e) {
+    if (String(e).includes("insufficient balance")) throw new Error("⚠️ Insufficient balance.");
+    throw e;
+  }
+}
+
+export async function ledgerSum(userId: string) {
+  const rows = await rpc<{ total: number; entries: number }[]>("ledger_sum", { uid: userId });
+  const r = rows?.[0];
+  return { total: Number(r?.total ?? 0), entries: Number(r?.entries ?? 0) };
+}
+
+/**
+ * Per-user mutex so parallel requests can never double-claim a reward.
+ * Stale locks (crashed requests) expire after 20 seconds.
+ */
+export async function withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const path = `locks/${key}`;
+  let got = await createDoc(path, { at: Date.now() });
+  if (!got) {
+    const cur = await getDoc<{ at: number }>(path);
+    if (!cur || Date.now() - (cur.at ?? 0) > 20_000) {
+      await deleteDoc(path);
+      got = await createDoc(path, { at: Date.now() });
+    }
+  }
+  if (!got) throw new Error("⏳ Please wait — your previous action is still processing.");
+  try {
+    return await fn();
+  } finally {
+    await deleteDoc(path).catch(() => undefined);
+  }
+}
