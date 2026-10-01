@@ -18,11 +18,12 @@ import {
   adminFindUsers,
   adminUserInfo,
   adminRepairBalance,
+  adminFixWebhook,
 } from "@/lib/api.functions";
 import { useAppState } from "./useApp";
 import { Card, Field, GhostButton, GoldButton, Guide, Pill, SectionTitle, Stat } from "./ui";
 
-const TABS = ["overview", "withdrawals", "users", "tasks", "codes", "ads", "settings"] as const;
+const TABS = ["overview", "withdrawals", "users", "suspended", "tasks", "codes", "ads", "settings"] as const;
 type Tab = (typeof TABS)[number];
 
 export function AdminPanel({ onClose }: { onClose: () => void }) {
@@ -94,7 +95,42 @@ staleTime: 30000,
             <Stat emoji="🚫" label="Suspended" value={fmt(data.stats.suspended)} />
             <Stat emoji="🪙" label="Token supply" value={fmt(data.stats.supply)} />
             <Stat emoji="💵" label="Paid out" value={`$${data.stats.paidUsd.toFixed(2)}`} />
+            <Stat emoji="⏳" label="Pending payouts" value={`$${data.stats.pendingUsd.toFixed(2)}`} />
+            <Stat
+              emoji="💲"
+              label="Supply in USD"
+              value={`$${(data.stats.supply / APP.tokensPerUsd).toFixed(2)}`}
+            />
           </div>
+          <Card>
+            <SectionTitle icon="🏦" title="Top balances" />
+            <div className="overflow-hidden rounded-xl border border-border">
+              <div className="grid grid-cols-[1fr_auto_auto] gap-2 bg-muted/50 px-3 py-2 text-[10px] font-extrabold uppercase text-muted-foreground">
+                <span>User</span>
+                <span className="text-right">{APP.tokenName}</span>
+                <span className="w-16 text-right">USD</span>
+              </div>
+              {[...data.users]
+                .sort((a, b) => b.balance - a.balance)
+                .slice(0, 15)
+                .map((u) => (
+                  <div
+                    key={u.id}
+                    className="grid grid-cols-[1fr_auto_auto] items-center gap-2 border-t border-border px-3 py-2 text-xs"
+                  >
+                    <span className="min-w-0 truncate font-bold">
+                      {u.suspended ? "🚫 " : ""}
+                      {u.name}
+                      <span className="block text-[10px] font-normal text-muted-foreground">{u.id}</span>
+                    </span>
+                    <span className="text-right font-black tabular-nums">{fmt(u.balance)}</span>
+                    <span className="w-16 text-right tabular-nums text-success">
+                      ${(u.balance / APP.tokensPerUsd).toFixed(2)}
+                    </span>
+                  </div>
+                ))}
+            </div>
+          </Card>
           <Card>
             <SectionTitle icon="📢" title="Broadcast" />
             <BroadcastForm admin={admin} />
@@ -114,6 +150,12 @@ staleTime: 30000,
         </Card>
       ) : tab === "users" ? (
         <UsersAdmin admin={admin} onDone={() => void refetch()} />
+      ) : tab === "suspended" ? (
+        <SuspendedAdmin
+          admin={admin}
+          rows={data.suspendedUsers ?? []}
+          onDone={() => void refetch()}
+        />
       ) : tab === "tasks" ? (
         <TasksAdmin admin={admin} tasks={data.tasks} onDone={() => void refetch()} />
       ) : tab === "codes" ? (
@@ -569,8 +611,108 @@ function SettingsAdmin({
   );
   const [maintenance, setMaintenance] = useState(cfg["maintenance"] === true);
   const [banner, setBanner] = useState(String(cfg["bannerUrl"] ?? ""));
+  const [mText, setMText] = useState(String(cfg["maintenanceText"] ?? ""));
+  const [withdrawOn, setWithdrawOn] = useState(cfg["withdrawEnabled"] !== false);
+  const [autoAd, setAutoAd] = useState(cfg["autoIntAd"] !== false);
+  const [newPw, setNewPw] = useState("");
   return (
     <>
+      <Card>
+        <SectionTitle
+          icon="💸"
+          title="Withdrawals"
+          action={<Pill tone={withdrawOn ? "success" : "danger"}>{withdrawOn ? "on" : "off"}</Pill>}
+        />
+        <Guide>
+          Turn off to pause all new withdrawal requests instantly (pending requests stay in the
+          queue). Users see a “withdrawals paused” message.
+        </Guide>
+        <GoldButton
+          disabled={busy}
+          onClick={() => {
+            const next = !withdrawOn;
+            void run(
+              () => adminSaveConfig({ data: { ...admin, patch: { withdrawEnabled: next } } }),
+              () => (next ? "✅ Withdrawals enabled" : "⏸ Withdrawals paused")
+            ).then((r) => {
+              if (r) setWithdrawOn(next);
+              onDone();
+            });
+          }}
+        >
+          {withdrawOn ? "⏸ Pause withdrawals" : "▶️ Enable withdrawals"}
+        </GoldButton>
+      </Card>
+
+      <Card>
+        <SectionTitle
+          icon="📺"
+          title="Auto ads"
+          action={<Pill tone={autoAd ? "success" : "muted"}>{autoAd ? "on" : "off"}</Pill>}
+        />
+        <Guide>Shows one Adsgram interstitial when the app opens and when users return to Home.</Guide>
+        <GhostButton
+          disabled={busy}
+          onClick={() => {
+            const next = !autoAd;
+            void run(
+              () => adminSaveConfig({ data: { ...admin, patch: { autoIntAd: next } } }),
+              () => (next ? "✅ Auto ads on" : "Auto ads off")
+            ).then((r) => {
+              if (r) setAutoAd(next);
+              onDone();
+            });
+          }}
+        >
+          {autoAd ? "Turn auto ads off" : "Turn auto ads on"}
+        </GhostButton>
+      </Card>
+
+      <Card>
+        <SectionTitle icon="🤖" title="Bot connection" />
+        <Guide>
+          If /start replies stop arriving, tap this from your published app. It re-links the bot to
+          this site and shows Telegram's last delivery error.
+        </Guide>
+        <GhostButton
+          disabled={busy}
+          onClick={() =>
+            void run(
+              () => adminFixWebhook({ data: admin }),
+              (r) =>
+                r?.ok
+                  ? `✅ Bot linked to ${r.url}${r.lastError ? ` — last error: ${r.lastError}` : ""}`
+                  : "❌ Telegram refused the link — check the bot token"
+            )
+          }
+        >
+          🔗 Re-link bot /start
+        </GhostButton>
+      </Card>
+
+      <Card>
+        <SectionTitle icon="🔑" title="Admin password" />
+        <div className="space-y-2">
+          <Field
+            label="New password (min 8 characters)"
+            type="password"
+            value={newPw}
+            onChange={(e) => setNewPw(e.target.value)}
+          />
+          <GhostButton
+            disabled={busy || newPw.length < 8}
+            onClick={() =>
+              void run(
+                () => adminSaveConfig({ data: { ...admin, patch: { adminPassword: newPw } } }),
+                () => "🔑 Password changed — log in again with the new one"
+              )
+            }
+          >
+            Change password
+          </GhostButton>
+        </div>
+      </Card>
+
       <Card>
         <SectionTitle
           icon="🛠️"
@@ -594,6 +736,14 @@ function SettingsAdmin({
         </label>
         <div className="mt-2">
           <Field
+            label="Maintenance message (optional)"
+            placeholder="We are upgrading Tigorix…"
+            value={mText}
+            onChange={(e) => setMText(e.target.value)}
+          />
+        </div>
+        <div className="mt-2">
+          <Field
             label="Welcome / broadcast banner image URL"
             placeholder="https://…/tigorix-banner.png"
             value={banner}
@@ -610,7 +760,7 @@ function SettingsAdmin({
               void run(
                 () =>
                   adminSaveConfig({
-                    data: { ...admin, patch: { maintenance, bannerUrl: banner.trim() } },
+                    data: { ...admin, patch: { maintenance, bannerUrl: banner.trim(), maintenanceText: mText.trim() } },
                   }),
                 () => (maintenance ? "🛠️ Maintenance mode ON" : "✅ App is live")
               ).then(onDone)
@@ -684,6 +834,7 @@ const AD_NUMBER_FIELDS = [
   ["withdrawAdsToWatch", "Ads to watch when submitting a withdrawal"],
   ["day1Ads", "Referral day-1 ads required"],
   ["day2Ads", "Referral day-2 ads required"],
+  ["minAdGapSec", "Minimum seconds between two ad rewards (anti-bot)"],
 ] as const;
 
 type SiteRow = { id: string; title: string; url: string; reward: number; active: boolean };
@@ -1139,6 +1290,67 @@ function UsersAdmin({ admin, onDone }: { admin: AdminAuth; onDone: () => void })
         ))}
         {users && !users.length && (
           <p className="py-4 text-center text-xs text-muted-foreground">No users found.</p>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function SuspendedAdmin({
+  admin,
+  rows,
+  onDone,
+}: {
+  admin: AdminAuth;
+  rows: {
+    id: string;
+    name: string;
+    balance: number;
+    reason: string;
+    refs: number;
+    createdAt: number;
+    lastSeen: number;
+  }[];
+  onDone: () => void;
+}) {
+  const { run, busy } = useAppState();
+  return (
+    <Card>
+      <SectionTitle icon="🚫" title="Suspended users" action={<Pill tone="danger">{rows.length}</Pill>} />
+      <Guide>
+        Accounts blocked automatically (duplicate device/IP, balance mismatch) or by you.
+        Unsuspending also repairs the balance to match the recorded activity.
+      </Guide>
+      <div className="space-y-2">
+        {rows.map((u) => (
+          <div key={u.id} className="rounded-xl border border-destructive/30 bg-destructive/5 p-3">
+            <div className="flex items-center gap-2">
+              <p className="min-w-0 flex-1 truncate text-sm font-extrabold">{u.name}</p>
+              <span className="text-xs font-black tabular-nums">
+                {fmt(u.balance)} {APP.tokenName}
+              </span>
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              🆔 {u.id} · 👥 {u.refs} refs · joined {new Date(u.createdAt).toISOString().slice(0, 10)}
+            </p>
+            <p className="mt-1 text-[11px] text-destructive">⚠️ {u.reason || "No reason recorded"}</p>
+            <div className="mt-2">
+              <GhostButton
+                disabled={busy}
+                onClick={() =>
+                  void run(
+                    () => adminUpdateUser({ data: { ...admin, userId: u.id, suspended: false } }),
+                    () => `✅ ${u.name} unsuspended`
+                  ).then(onDone)
+                }
+              >
+                ✅ Unsuspend
+              </GhostButton>
+            </div>
+          </div>
+        ))}
+        {!rows.length && (
+          <p className="py-4 text-center text-xs text-muted-foreground">🎉 No suspended users.</p>
         )}
       </div>
     </Card>
