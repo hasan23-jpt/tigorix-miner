@@ -78,7 +78,7 @@ function Shell() {
   useEffect(() => {
     if (tab !== "home" || admin) return;
     if (boot.cfg.autoIntAd === false || state.user.suspended || boot.cfg.maintenance) return;
-    if (Date.now() - lastAutoAd.current < 60000) return;
+    if (Date.now() - lastAutoAd.current < 15000) return;
     lastAutoAd.current = Date.now();
     void showAutoAd();
   }, [tab, admin, showAutoAd, boot.cfg.autoIntAd, boot.cfg.maintenance, state.user.suspended]);

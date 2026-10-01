@@ -4,10 +4,11 @@ import { MIN_WATCH_MS, adErrorMessage, hasBlock, showAd, type AdNet } from "@/li
 import { useAppState } from "./useApp";
 
 /**
- * Runs an action behind an optional ad. Reward claims require the ad to play for
- * at least 10 seconds; if no ad is available the user gets a "try again" popup
- * and the action is not performed.
+ * Runs an action behind an ad. If no ad is available the user gets a
+ * "try again" popup and the action is not performed.
  */
+let autoBusy = false;
+
 export function useAdGate() {
   const { boot } = useAppState();
   const [watchingAd, setWatchingAd] = useState(0); // 0 = idle
@@ -102,8 +103,19 @@ export function useAdGate() {
   /** Fire-and-forget interstitial (app open / Home visit). No reward, no gate. */
   const showAutoAd = useCallback(async () => {
     const blockId = blockOf("int");
-    if (!hasBlock(blockId)) return;
-    await showAd("int", blockId);
+    if (!hasBlock(blockId) || autoBusy) return;
+    autoBusy = true;
+    try {
+      // Give the Telegram view + Adsgram SDK a moment to be ready, retry once on no-fill.
+      await new Promise((r) => setTimeout(r, 1200));
+      const first = await showAd("int", blockId);
+      if (!first.ok) {
+        await new Promise((r) => setTimeout(r, 2500));
+        await showAd("int", blockId);
+      }
+    } finally {
+      autoBusy = false;
+    }
   }, [blockOf]);
 
   return { gateWithInterstitial, gateWithRewardAds, showRandomAd, showAutoAd, watchingAd };
