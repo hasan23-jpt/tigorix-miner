@@ -184,7 +184,7 @@ function AdBlockCard({
   disabled,
   onWatch,
 }: {
-  logo?: string;
+  logo?: string | undefined;
   network: string;
   title: string;
   reward: number;
