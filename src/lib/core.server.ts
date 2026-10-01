@@ -891,6 +891,17 @@ export async function redeemCode(user: UserDoc, rawCode: string) {
   return { reward: doc.reward, balance: user.balance };
 }
 
+/* ------------------------------ preferences ---------------------------- */
+
+export async function setPrefs(user: UserDoc, prefs: { language?: string; notifications?: boolean }) {
+  const patch: Record<string, unknown> = {};
+  if (typeof prefs.language === "string" && /^(en|ru|hi|bn)$/.test(prefs.language))
+    patch["language"] = prefs.language;
+  if (typeof prefs.notifications === "boolean") patch["notifications"] = prefs.notifications;
+  if (Object.keys(patch).length) await setDoc(`users/${user.id}`, patch);
+  return { ok: true, ...patch };
+}
+
 /* -------------------------------- wallet ------------------------------- */
 
 export async function setWallet(user: UserDoc, address: string) {

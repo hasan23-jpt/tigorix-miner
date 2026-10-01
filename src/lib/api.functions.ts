@@ -42,6 +42,7 @@ import {
   claimSite,
   adminSaveSite,
   adminDeleteSite,
+  setPrefs,
 } from "./core.server";
 import type { AdNetwork } from "./core.server";
 import { ensureTelegramWebhook, forceTelegramWebhook, verifyInitData } from "./bot.server";
@@ -496,4 +497,14 @@ export const adminFixWebhook = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await adminSession(data.initData, data.password);
     return forceTelegramWebhook(origin());
+  });
+
+export const doSetPrefs = createServerFn({ method: "POST" })
+  .inputValidator((d: Auth & { language?: string; notifications?: boolean }) => d)
+  .handler(async ({ data }) => {
+    const { user } = await session(data.initData);
+    return setPrefs(user, {
+      ...(typeof data.language === "string" ? { language: str(data.language, 4) } : {}),
+      ...(typeof data.notifications === "boolean" ? { notifications: data.notifications } : {}),
+    });
   });

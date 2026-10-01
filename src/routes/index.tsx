@@ -12,6 +12,7 @@ import { ReferTab } from "@/components/app/ReferTab";
 import { ProfileTab } from "@/components/app/ProfileTab";
 import { AdminPanel } from "@/components/app/AdminPanel";
 import { useAdGate } from "@/components/app/useAdGate";
+import { I18nProvider, useI18n } from "@/lib/i18n";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -51,24 +52,27 @@ function Index() {
 
   return (
     <AppProvider boot={data}>
-      <Shell />
+      <I18nProvider initial={data.user.language}>
+        <Shell />
+      </I18nProvider>
       <Toaster />
     </AppProvider>
   );
 }
 
 const TABS = [
-  { id: "home", label: "Home", Icon: Home },
-  { id: "tasks", label: "Tasks", Icon: ListChecks },
-  { id: "ads", label: "Earn", Icon: PlayCircle },
-  { id: "refer", label: "Refer", Icon: Users },
-  { id: "profile", label: "Profile", Icon: User },
+  { id: "home", label: "home", Icon: Home },
+  { id: "tasks", label: "tasks", Icon: ListChecks },
+  { id: "ads", label: "earn", Icon: PlayCircle },
+  { id: "refer", label: "refer", Icon: Users },
+  { id: "profile", label: "profile", Icon: User },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
 
 function Shell() {
   const { state, boot } = useAppState();
+  const { t } = useI18n();
   const [tab, setTab] = useState<TabId>("home");
   const [admin, setAdmin] = useState(false);
   const { showAutoAd } = useAdGate();
@@ -88,7 +92,7 @@ function Shell() {
       <main className="grid min-h-screen place-items-center p-6 text-center">
         <div className="surface-card max-w-sm p-6">
           <p className="animate-float text-5xl">🛠️</p>
-          <h1 className="mt-3 text-xl font-extrabold">We are upgrading Tigorix</h1>
+          <h1 className="mt-3 text-xl font-extrabold">{t("maintenanceTitle")}</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Maintenance mode is on. Mining, tasks and withdrawals will be back shortly — your
             balance and referrals are completely safe. 🐯
@@ -106,7 +110,7 @@ function Shell() {
       <main className="grid min-h-screen place-items-center p-6 text-center">
         <div className="surface-card max-w-sm p-6">
           <p className="text-5xl">🚫</p>
-          <h1 className="mt-3 text-xl font-extrabold">Account suspended</h1>
+          <h1 className="mt-3 text-xl font-extrabold">{t("suspendedTitle")}</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {state.user.suspendReason ||
               "Suspicious activity was detected on this account. Every feature is locked."}
@@ -127,10 +131,13 @@ function Shell() {
           <p className="truncate text-sm font-extrabold leading-tight">
             {state.user.username ? `@${state.user.username}` : state.user.firstName || "Tiger"}
           </p>
-          <p className="text-[10px] text-muted-foreground">🟢 Online · ID {state.user.id}</p>
+          <p className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            <span className="size-1.5 animate-pulse rounded-full bg-success" /> {t("online")} · ID{" "}
+            {state.user.id}
+          </p>
         </div>
         <div className="ml-auto text-right">
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Balance</p>
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("balance")}</p>
           <p className="text-sm font-black">
             <span className="text-gold-gradient">{fmt(state.user.balance)}</span>{" "}
             <span className="text-[10px] text-muted-foreground">{APP.tokenName}</span>
@@ -170,7 +177,7 @@ function Shell() {
                 }
               >
                 <Icon className={center ? "size-7" : "size-5"} />
-                {label}
+                {t(label)}
               </button>
             );
           })}
