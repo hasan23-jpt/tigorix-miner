@@ -2,3 +2,18 @@
 - [x] Restore Adsgram playback and enforce a 10-second watch
 - [x] Remove the pre-ad confirmation checkbox from Ads
 - [x] Fix the Telegram /start bot response
+- [x] Fix broken app state file (build error)
+- [ ] Move database from Firebase to user's Supabase (needs server secret key + table setup)
+- [ ] Multiple languages + detailed About page
+- [ ] Remove 10-second minimum ad watch
+- [ ] Accurate activity/balance audit; auto-suspend mismatched accounts only after activity is recorded
+- [ ] Admin: separate Suspended users tab; tidy user balance display; withdrawal on/off setting; more admin features
+- [ ] Max security hardening (database, admin panel, referrals — no extra rewards anywhere)
+- [ ] Fix auto ad playback
+- [ ] Gigapub with script id=7844 and window.showGiga()
+- [ ] Adsbitvex playback fix
+- [ ] Network icons on ad cards
+- [ ] Prettier emoji withdrawal-approved post to payment channel
+- [ ] /start bot message fix
+- [ ] Move payment proof from Watch tab to bottom of Home
+- [ ] Advanced redesign: more animations, richer colors, round logo in loading screen
