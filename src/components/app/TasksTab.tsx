@@ -168,7 +168,7 @@ type Task = {
   imageUrl?: string;
 };
 
-function TaskLogo({ src, fallback }: { src?: string; fallback: string }) {
+function TaskLogo({ src, fallback }: { src?: string | undefined; fallback: string }) {
   const [bad, setBad] = useState(false);
   if (!src || bad)
     return (
