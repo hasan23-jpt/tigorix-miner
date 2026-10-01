@@ -10,6 +10,7 @@ import {
 } from "@/lib/api.functions";
 import { useAppState } from "./useApp";
 import { useAdGate } from "./useAdGate";
+import { PayoutProofsCard } from "./PayoutProofs";
 import { Card, Field, GhostButton, GoldButton, Guide, Pill, SectionTitle } from "./ui";
 
 function countdown(ms: number) {
@@ -250,6 +251,8 @@ export function HomeTab({ onNavigate }: { onNavigate: (tab: string) => void }) {
         <GhostButton onClick={() => openLink(APP.communityChannel)}>📣 Community</GhostButton>
         <GhostButton onClick={() => openLink(APP.paymentChannel)}>💸 Payments</GhostButton>
       </div>
+
+      <PayoutProofsCard />
 
       <p className="flex items-center justify-center gap-1.5 pb-2 text-[11px] text-muted-foreground">
         <ShieldCheck className="size-3.5 text-success" /> Secured by Tigorix anti-fraud engine

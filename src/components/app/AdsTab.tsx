@@ -1,13 +1,22 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ExternalLink, Globe, PlayCircle, ShieldCheck } from "lucide-react";
+import { ExternalLink, Globe, PlayCircle } from "lucide-react";
 import { APP, fmt } from "@/lib/config";
 import { openLink } from "@/lib/telegram";
 import { MIN_WATCH_MS, adErrorMessage, hasBlock, showAd, type AdNet } from "@/lib/adnetworks";
-import { doClaimSite, doRecordAd, getPayoutProofs, getSites } from "@/lib/api.functions";
+import { doClaimSite, doRecordAd, getSites } from "@/lib/api.functions";
 import { useAppState } from "./useApp";
 import { Card, GhostButton, GoldButton, Guide, Pill, SectionTitle, Stat } from "./ui";
 import adsgramLogo from "@/assets/adsgram-logo.png";
+import monetagLogo from "@/assets/monetag-logo.png";
+import bitvexLogo from "@/assets/adsbitvex-logo.png";
+
+const LOGOS: Partial<Record<AdNet, string>> = {
+  int: adsgramLogo,
+  reward: adsgramLogo,
+  monetag: monetagLogo,
+  bitvex: bitvexLogo,
+};
 
 /**
  * Rewarded ads are entirely optional: the user opts in before any ad is shown
@@ -19,9 +28,9 @@ export function AdsTab() {
   return (
     <div className="space-y-4">
       <Guide>
-        Watching ads here is completely optional. Mining, daily rewards, tasks and referrals all
-        work without ever opening an ad. If you choose to watch one, you get a small token bonus
-        per view.
+        Pick any ad network below and tap Watch Ad. When the ad finishes, the reward is added to
+        your balance instantly. Each network has its own daily limit that resets at 00:00 UTC.
+        Your friends' ad views also unlock your referral rewards.
       </Guide>
 
       <div className="surface-card grid grid-cols-2 gap-2 p-1.5">
@@ -56,12 +65,6 @@ type NetworkCard = {
 function AdsView() {
   const { state, boot, auth, run, busy } = useAppState();
   const [playing, setPlaying] = useState<AdNet | null>(null);
-  const { data: proofs } = useQuery({
-    queryKey: ["payout-proofs"],
-    queryFn: () => getPayoutProofs(),
-    refetchInterval: 60000,
-  });
-  const origin = typeof window === "undefined" ? "" : window.location.origin;
   const cfg = boot.cfg as unknown as Record<string, number | string | boolean>;
   const u = state.user as unknown as Record<string, number>;
 
@@ -146,7 +149,7 @@ function AdsView() {
       {cards.map((c) => (
         <AdBlockCard
           key={c.net}
-          logo={adsgramLogo}
+          logo={LOGOS[c.net]}
           network={c.network}
           title={c.title}
           reward={c.reward}
@@ -166,56 +169,6 @@ function AdsView() {
         </Card>
       )}
 
-      <Card>
-        <SectionTitle icon="🧾" title="Proof of Payouts" action={<Pill tone="success">Public</Pill>} />
-        <p className="mb-3 text-[11px] text-muted-foreground">
-          Every approved withdrawal is published here and in our public payment channel with
-          amount, fee and on-chain transaction ID, so rewards can be verified by anyone.
-        </p>
-        <div className="mb-3 grid grid-cols-2 gap-2">
-          <Stat emoji="✅" label="Total paid out" value={`$${(proofs?.totalPaidUsd ?? 0).toFixed(4)}`} />
-          <Stat emoji="🧾" label="Payouts" value={fmt(proofs?.totalPayouts ?? 0)} />
-        </div>
-        <div className="mb-3 space-y-2">
-          {(proofs?.payouts ?? []).slice(0, 5).map((p) => (
-            <div
-              key={p.id}
-              className="flex items-center justify-between rounded-lg border border-border bg-background/40 px-3 py-2 text-[11px]"
-            >
-              <div className="min-w-0">
-                <p className="font-bold">
-                  #{p.number} · {p.user} · {fmt(p.tokens)} {APP.tokenName}
-                </p>
-                <p className="text-[10px] text-muted-foreground">
-                  {new Date(p.at).toISOString().slice(0, 16).replace("T", " ")} UTC ·{" "}
-                  {p.txId ? `tx ${p.txId.slice(0, 10)}…` : "tx pending"}
-                </p>
-              </div>
-              <span className="font-black text-success">${p.netUsd.toFixed(4)}</span>
-            </div>
-          ))}
-          {proofs && !proofs.payouts.length && (
-            <p className="py-3 text-center text-[11px] text-muted-foreground">
-              No payouts approved yet — confirmations appear here automatically.
-            </p>
-          )}
-        </div>
-        <div className="grid gap-2">
-          <GoldButton onClick={() => openLink(APP.paymentChannel)}>
-            💳 View Payout Proofs Channel
-          </GoldButton>
-          <GhostButton onClick={() => openLink(`${origin}/payouts`)}>
-            🌐 Public Payout Page
-          </GhostButton>
-          <GhostButton onClick={() => openLink(APP.communityChannel)}>
-            📣 Community Channel
-          </GhostButton>
-        </div>
-        <p className="mt-3 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
-          <ShieldCheck className="size-3.5 text-success" /> 100,000 {APP.tokenName} = $1 USDT
-          (BEP-20)
-        </p>
-      </Card>
     </>
   );
 }
@@ -231,7 +184,7 @@ function AdBlockCard({
   disabled,
   onWatch,
 }: {
-  logo: string;
+  logo?: string;
   network: string;
   title: string;
   reward: number;
@@ -244,14 +197,20 @@ function AdBlockCard({
   return (
     <Card>
       <div className="mb-3 flex items-center gap-2">
-        <img
-          src={logo}
-          alt="Adsgram"
-          width={512}
-          height={512}
-          loading="lazy"
-          className="size-7 rounded-lg"
-        />
+        {logo ? (
+          <img
+            src={logo}
+            alt={`${network} logo`}
+            width={128}
+            height={128}
+            loading="lazy"
+            className="size-10 rounded-xl bg-background/60 object-contain p-1 ring-1 ring-border"
+          />
+        ) : (
+          <span className="grid size-10 place-items-center rounded-xl bg-info/20 text-sm font-black text-info ring-1 ring-info/40">
+            GP
+          </span>
+        )}
         <div className="min-w-0">
           <p className="text-sm font-extrabold leading-tight">{title}</p>
           <p className="text-[10px] font-bold text-muted-foreground">{network}</p>
