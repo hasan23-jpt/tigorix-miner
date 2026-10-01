@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { session, adminSession, clientIp, origin } from "./session.server";
+import { session, act, adminSession, clientIp, origin } from "./session.server";
 import {
   ensureUser,
   miningState,
@@ -44,9 +44,48 @@ import {
   adminDeleteSite,
 } from "./core.server";
 import type { AdNetwork } from "./core.server";
-import { ensureTelegramWebhook, verifyInitData } from "./bot.server";
+import { ensureTelegramWebhook, forceTelegramWebhook, verifyInitData } from "./bot.server";
 
 type Auth = { initData: string };
+
+const str = (v: unknown, max: number) => String(v ?? "").slice(0, max);
+const num = (v: unknown) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+/** Only these config keys may be changed from the admin panel, with fixed types. */
+const CFG_TYPES: Record<string, "number" | "boolean" | "string"> = {
+  miningReward: "number", miningHours: "number", dailyTaskReward: "number",
+  dailyReferReward: "number", refJoin: "number", refDay1: "number", refDay2: "number",
+  day1Ads: "number", day2Ads: "number", adReward: "number", adsDailyCap: "number",
+  adsgramIntBlockId: "string", adsgramRewardBlockId: "string", intAdReward: "number",
+  intAdsDailyCap: "number", rewardAdReward: "number", rewardAdsDailyCap: "number",
+  gigaBlockId: "string", gigaAdReward: "number", gigaAdsDailyCap: "number",
+  monetagBlockId: "string", monetagAdReward: "number", monetagAdsDailyCap: "number",
+  bitvexBlockId: "string", bitvexAdReward: "number", bitvexAdsDailyCap: "number",
+  autoIntAd: "boolean", bannerUrl: "string", withdrawAdsRequired: "number",
+  withdrawMinRefs: "number", withdrawCooldownHours: "number", withdrawAdsToWatch: "number",
+  minWithdrawFirst: "number", minWithdrawNext: "number", feeFlatUsd: "number",
+  feePercent: "number", adminPassword: "string", maintenance: "boolean",
+  withdrawEnabled: "boolean", minAdGapSec: "number", maintenanceText: "string",
+};
+
+function cleanCfgPatch(patch: Record<string, unknown>) {
+  const out: Record<string, number | boolean | string> = {};
+  for (const [k, v] of Object.entries(patch ?? {})) {
+    const t = CFG_TYPES[k];
+    if (!t) continue;
+    if (t === "number") {
+      const n = Number(v);
+      if (Number.isFinite(n) && n >= 0 && n <= 1e9) out[k] = n;
+    } else if (t === "boolean") out[k] = v === true || v === "true";
+    else out[k] = String(v ?? "").slice(0, 500);
+  }
+  if (typeof out["adminPassword"] === "string" && String(out["adminPassword"]).length < 8)
+    delete out["adminPassword"];
+  return out;
+}
 
 export const bootstrap = createServerFn({ method: "POST" })
   .inputValidator((d: Auth & { device: string; ref: string }) => d)
@@ -104,6 +143,7 @@ export const bootstrap = createServerFn({ method: "POST" })
         feePercent: cfg.feePercent,
         tokensPerUsd: cfg.tokensPerUsd,
         maintenance: cfg.maintenance,
+        withdrawEnabled: cfg.withdrawEnabled !== false,
       },
       user: publicUser(user),
       mining: miningState(user, cfg),
@@ -188,31 +228,19 @@ export const getState = createServerFn({ method: "POST" })
 
 export const doStartMining = createServerFn({ method: "POST" })
   .inputValidator((d: Auth) => d)
-  .handler(async ({ data }) => {
-    const { user, cfg } = await session(data.initData);
-    return startMining(user, cfg);
-  });
+  .handler(async ({ data }) => act(data.initData, ({ user, cfg }) => startMining(user, cfg)));
 
 export const doClaimMining = createServerFn({ method: "POST" })
   .inputValidator((d: Auth) => d)
-  .handler(async ({ data }) => {
-    const { user, cfg } = await session(data.initData);
-    return claimMining(user, cfg);
-  });
+  .handler(async ({ data }) => act(data.initData, ({ user, cfg }) => claimMining(user, cfg)));
 
 export const doClaimDaily = createServerFn({ method: "POST" })
   .inputValidator((d: Auth) => d)
-  .handler(async ({ data }) => {
-    const { user } = await session(data.initData);
-    return claimDaily(user);
-  });
+  .handler(async ({ data }) => act(data.initData, ({ user }) => claimDaily(user)));
 
 export const doRedeemCode = createServerFn({ method: "POST" })
   .inputValidator((d: Auth & { code: string }) => d)
-  .handler(async ({ data }) => {
-    const { user } = await session(data.initData);
-    return redeemCode(user, data.code);
-  });
+  .handler(async ({ data }) => act(data.initData, ({ user }) => redeemCode(user, str(data.code, 32))));
 
 export const getTasks = createServerFn({ method: "POST" })
   .inputValidator((d: Auth) => d)
@@ -229,26 +257,15 @@ export const getTasks = createServerFn({ method: "POST" })
 
 export const doClaimTask = createServerFn({ method: "POST" })
   .inputValidator((d: Auth & { taskId: string; openedAt: number }) => d)
-  .handler(async ({ data }) => {
-    const { user } = await session(data.initData);
-    return claimTask(user, data.taskId, Number(data.openedAt ?? 0));
-  });
+  .handler(async ({ data }) => act(data.initData, ({ user }) => claimTask(user, str(data.taskId, 60), num(data.openedAt))));
 
 export const doClaimDailyTask = createServerFn({ method: "POST" })
   .inputValidator((d: Auth & { key: string }) => d)
-  .handler(async ({ data }) => {
-    const { user, cfg } = await session(data.initData);
-    return claimDailyTask(user, cfg, data.key);
-  });
+  .handler(async ({ data }) => act(data.initData, ({ user, cfg }) => claimDailyTask(user, cfg, str(data.key, 20))));
 
 export const doRecordAd = createServerFn({ method: "POST" })
   .inputValidator((d: Auth & { network: AdNetwork }) => d)
-  .handler(async ({ data }) => {
-    const { user, cfg } = await session(data.initData);
-    const allowed: AdNetwork[] = ["int", "reward", "giga", "monetag", "bitvex"];
-    const network = allowed.includes(data.network) ? data.network : "int";
-    return recordAdView(user, cfg, network);
-  });
+  .handler(async ({ data }) => act(data.initData, ({ user, cfg }) => recordAdView(user, cfg, (["int", "reward", "giga", "monetag", "bitvex"] as AdNetwork[]).includes(data.network) ? data.network : "int")));
 
 export const getReferrals = createServerFn({ method: "POST" })
   .inputValidator((d: Auth) => d)
@@ -264,24 +281,15 @@ export const getReferrals = createServerFn({ method: "POST" })
 
 export const doClaimReferral = createServerFn({ method: "POST" })
   .inputValidator((d: Auth) => d)
-  .handler(async ({ data }) => {
-    const { user } = await session(data.initData);
-    return claimReferralEarnings(user);
-  });
+  .handler(async ({ data }) => act(data.initData, ({ user }) => claimReferralEarnings(user)));
 
 export const doSetWallet = createServerFn({ method: "POST" })
   .inputValidator((d: Auth & { address: string }) => d)
-  .handler(async ({ data }) => {
-    const { user } = await session(data.initData);
-    return setWallet(user, data.address);
-  });
+  .handler(async ({ data }) => act(data.initData, ({ user }) => setWallet(user, str(data.address, 64))));
 
 export const doWithdraw = createServerFn({ method: "POST" })
   .inputValidator((d: Auth & { tokens: number }) => d)
-  .handler(async ({ data }) => {
-    const { user, cfg } = await session(data.initData);
-    return requestWithdraw(user, cfg, Number(data.tokens));
-  });
+  .handler(async ({ data }) => act(data.initData, ({ user, cfg }) => requestWithdraw(user, cfg, num(data.tokens))));
 
 export const getFinance = createServerFn({ method: "POST" })
   .inputValidator((d: Auth) => d)
@@ -318,10 +326,7 @@ export const getSites = createServerFn({ method: "POST" })
 
 export const doClaimSite = createServerFn({ method: "POST" })
   .inputValidator((d: Auth & { siteId: string; openedAt: number }) => d)
-  .handler(async ({ data }) => {
-    const { user } = await session(data.initData);
-    return claimSite(user, String(data.siteId ?? ""), Number(data.openedAt ?? 0));
-  });
+  .handler(async ({ data }) => act(data.initData, ({ user }) => claimSite(user, str(data.siteId, 60), num(data.openedAt))));
 
 export const getLeaderboard = createServerFn({ method: "POST" })
   .inputValidator((d: Auth) => d)
@@ -339,7 +344,9 @@ export const adminLoad = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { cfg } = await adminSession(data.initData, data.password);
     const overview = await adminOverview();
-    return { ...overview, cfg };
+    const { adminPassword: _pw, ...safeCfg } = cfg;
+    void _pw;
+    return { ...overview, cfg: safeCfg };
   });
 
 export const adminWithdrawDecision = createServerFn({ method: "POST" })
@@ -366,7 +373,10 @@ export const adminSaveConfig = createServerFn({ method: "POST" })
   .inputValidator((d: AdminAuth & { patch: Record<string, number | boolean | string> }) => d)
   .handler(async ({ data }) => {
     await adminSession(data.initData, data.password);
-    return saveCfg(data.patch);
+    const saved = await saveCfg(cleanCfgPatch(data.patch));
+    const { adminPassword: _pw, ...safeCfg } = saved;
+    void _pw;
+    return safeCfg;
   });
 
 export const adminTaskSave = createServerFn({ method: "POST" })
@@ -479,4 +489,11 @@ export const adminSiteDelete = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await adminSession(data.initData, data.password);
     return adminDeleteSite(data.id);
+  });
+
+export const adminFixWebhook = createServerFn({ method: "POST" })
+  .inputValidator((d: AdminAuth) => d)
+  .handler(async ({ data }) => {
+    await adminSession(data.initData, data.password);
+    return forceTelegramWebhook(origin());
   });
