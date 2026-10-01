@@ -5,7 +5,7 @@ import {
   btn,
   sendMessage,
   sendPhoto,
-  telegramWebhookSecret,
+  webhookSecret,
 } from "@/lib/bot.server";
 import { getCfg } from "@/lib/core.server";
 
@@ -20,8 +20,7 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const secret =
-          process.env["TELEGRAM_WEBHOOK_SECRET"] ?? (await telegramWebhookSecret());
+        const secret = await webhookSecret();
         const receivedSecret = request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "";
         if (receivedSecret !== secret) {
           return new Response("Unauthorized", { status: 401 });

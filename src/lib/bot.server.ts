@@ -11,6 +11,14 @@ const API = () => `https://api.telegram.org/bot${botToken()}`;
 
 let registeredWebhookOrigin = "";
 
+/** The secret Telegram must send with every webhook call (env override or derived). */
+export async function webhookSecret() {
+  const env = (process.env["TELEGRAM_WEBHOOK_SECRET"] ?? "").trim();
+  // Telegram only accepts A-Z a-z 0-9 _ - (1-256 chars) as secret_token.
+  if (env && /^[A-Za-z0-9_-]{1,256}$/.test(env)) return env;
+  return telegramWebhookSecret();
+}
+
 export async function telegramWebhookSecret() {
   const bytes = await crypto.subtle.digest(
     "SHA-256",
@@ -32,11 +40,25 @@ export async function ensureTelegramWebhook(origin: string) {
   }
   const result = await tg("setWebhook", {
     url: `${cleanOrigin}/api/public/telegram/webhook`,
-    secret_token: await telegramWebhookSecret(),
+    secret_token: await webhookSecret(),
     allowed_updates: ["message"],
     drop_pending_updates: false,
   });
   if (result) registeredWebhookOrigin = cleanOrigin;
+}
+
+/** Forces the webhook to the given origin and returns Telegram's webhook info. */
+export async function forceTelegramWebhook(origin: string) {
+  const cleanOrigin = origin.replace(/\/$/, "");
+  const set = await tg("setWebhook", {
+    url: `${cleanOrigin}/api/public/telegram/webhook`,
+    secret_token: await webhookSecret(),
+    allowed_updates: ["message"],
+    drop_pending_updates: false,
+  });
+  if (set) registeredWebhookOrigin = cleanOrigin;
+  const info = await tg("getWebhookInfo", {});
+  return { ok: !!set, info: (info?.result ?? null) as Record<string, unknown> | null };
 }
 
 export async function tg(method: string, body: Record<string, unknown>) {
@@ -137,19 +159,7 @@ export type AuthUser = {
 
 /** Verifies Telegram WebApp initData signature; throws when invalid. */
 export async function verifyInitData(initData: string): Promise<AuthUser> {
-  if (!initData) {
-    if (process.env["NODE_ENV"] !== "production") {
-      return {
-        id: APP.adminTelegramId,
-        username: "preview_admin",
-        firstName: "Preview",
-        photoUrl: "",
-        languageCode: "en",
-        startParam: "",
-      };
-    }
-    throw new Error("Missing Telegram session");
-  }
+  if (!initData) throw new Error("Missing Telegram session — please open Tigorix inside Telegram.");
   const params = new URLSearchParams(initData);
   const hash = params.get("hash") ?? "";
   params.delete("hash");
@@ -159,7 +169,9 @@ export async function verifyInitData(initData: string): Promise<AuthUser> {
     .join("\n");
   const secret = await hmac(new TextEncoder().encode("WebAppData"), botToken());
   const signature = hex(await hmac(secret, dataCheck));
-  if (signature !== hash) throw new Error("Invalid Telegram signature");
+  let diff = signature.length ^ hash.length;
+  for (let i = 0; i < signature.length; i++) diff |= signature.charCodeAt(i) ^ (hash.charCodeAt(i) || 0);
+  if (!hash || diff !== 0) throw new Error("Invalid Telegram signature");
 
   const authDate = Number(params.get("auth_date") ?? 0);
   if (!authDate || Date.now() / 1000 - authDate > 60 * 60 * 24)

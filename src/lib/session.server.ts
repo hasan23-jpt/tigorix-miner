@@ -10,7 +10,7 @@ import {
   type Cfg,
   type UserDoc,
 } from "./core.server";
-import { createDoc, deleteDoc, getDoc, setDoc, withLock } from "./fsdb.server";
+import { deleteDoc, getDoc, setDoc, withLock } from "./fsdb.server";
 
 export function clientIp() {
   return (
@@ -100,6 +100,5 @@ export async function adminSession(initData: string, password: string) {
     throw new Error("Invalid admin password");
   }
   if (fails) await deleteDoc(failPath);
-  void createDoc;
   return { auth, user, cfg };
 }
