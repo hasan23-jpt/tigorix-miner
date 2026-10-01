@@ -602,7 +602,6 @@ export async function claimTask(user: UserDoc, taskId: string, _openedAt: number
     const member = await isChannelMember(chatId, user.id);
     if (!member) throw new Error("📣 You are not a member yet. Join the channel and claim again.");
   } else if (
-    !(await getDoc<{ at: number }>(`taskOpens/${user.id}_${taskId}`)) ||
     Date.now() - ((await getDoc<{ at: number }>(`taskOpens/${user.id}_${taskId}`))?.at ?? Date.now()) < 5000
   ) {
     throw new Error("⏱ Please stay on the link for at least 5 seconds.");
