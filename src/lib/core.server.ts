@@ -1187,6 +1187,19 @@ export async function adminOverview() {
           };
         })
     ),
+    suspendedUsers: users
+      .filter((u) => u.suspended)
+      .sort((a, b) => (b.lastSeen ?? 0) - (a.lastSeen ?? 0))
+      .slice(0, 200)
+      .map((u) => ({
+        id: u.id,
+        name: label(u),
+        balance: u.balance ?? 0,
+        reason: u.suspendReason ?? "",
+        refs: u.refCount ?? 0,
+        createdAt: u.createdAt ?? 0,
+        lastSeen: u.lastSeen ?? 0,
+      })),
     tasks,
     codes,
     sites,
@@ -1291,6 +1304,9 @@ export async function adminSetUser(
     await credit(user, delta, "admin_adjust", "Admin balance adjustment");
   }
   if (Object.keys(update).length) await setDoc(`users/${userId}`, update);
+  // Unsuspending also repairs the stored balance to the ledger so the
+  // automatic audit does not instantly suspend the account again.
+  if (patch.suspended === false) await adminFixBalance(userId);
   return { ok: true };
 }
 
