@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PayoutsRouteImport } from './routes/payouts'
+import { Route as ApiPublicChatPhotoRouteImport } from './routes/api/public/chat-photo'
 import { Route as ApiPublicCronMiningRouteImport } from './routes/api/public/cron/mining'
 import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram/webhook'
 
@@ -22,6 +23,11 @@ const IndexRoute = IndexRouteImport.update({
 const PayoutsRoute = PayoutsRouteImport.update({
   id: '/payouts',
   path: '/payouts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicChatPhotoRoute = ApiPublicChatPhotoRouteImport.update({
+  id: '/api/public/chat-photo',
+  path: '/api/public/chat-photo',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicCronMiningRoute = ApiPublicCronMiningRouteImport.update({
@@ -39,12 +45,14 @@ const ApiPublicTelegramWebhookRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/payouts': typeof PayoutsRoute
+  '/api/public/chat-photo': typeof ApiPublicChatPhotoRoute
   '/api/public/cron/mining': typeof ApiPublicCronMiningRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/payouts': typeof PayoutsRoute
+  '/api/public/chat-photo': typeof ApiPublicChatPhotoRoute
   '/api/public/cron/mining': typeof ApiPublicCronMiningRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
@@ -52,6 +60,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/payouts': typeof PayoutsRoute
+  '/api/public/chat-photo': typeof ApiPublicChatPhotoRoute
   '/api/public/cron/mining': typeof ApiPublicCronMiningRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
@@ -60,18 +69,21 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/payouts'
+    | '/api/public/chat-photo'
     | '/api/public/cron/mining'
     | '/api/public/telegram/webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/payouts'
+    | '/api/public/chat-photo'
     | '/api/public/cron/mining'
     | '/api/public/telegram/webhook'
   id:
     | '__root__'
     | '/'
     | '/payouts'
+    | '/api/public/chat-photo'
     | '/api/public/cron/mining'
     | '/api/public/telegram/webhook'
   fileRoutesById: FileRoutesById
@@ -79,6 +91,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   PayoutsRoute: typeof PayoutsRoute
+  ApiPublicChatPhotoRoute: typeof ApiPublicChatPhotoRoute
   ApiPublicCronMiningRoute: typeof ApiPublicCronMiningRoute
   ApiPublicTelegramWebhookRoute: typeof ApiPublicTelegramWebhookRoute
 }
@@ -97,6 +110,13 @@ declare module '@tanstack/react-router' {
       path: '/payouts'
       fullPath: '/payouts'
       preLoaderRoute: typeof PayoutsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/chat-photo': {
+      id: '/api/public/chat-photo'
+      path: '/api/public/chat-photo'
+      fullPath: '/api/public/chat-photo'
+      preLoaderRoute: typeof ApiPublicChatPhotoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/cron/mining': {
@@ -119,6 +139,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   PayoutsRoute: PayoutsRoute,
+  ApiPublicChatPhotoRoute: ApiPublicChatPhotoRoute,
   ApiPublicCronMiningRoute: ApiPublicCronMiningRoute,
   ApiPublicTelegramWebhookRoute: ApiPublicTelegramWebhookRoute,
 }

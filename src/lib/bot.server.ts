@@ -127,6 +127,19 @@ export async function notifyAdmin(text: string, keyboard?: { text: string; url: 
 }
 
 /** Returns true when the user is a member of the given channel. */
+/** Downloads a public chat's profile photo via the bot (for allow-listed chats only). */
+export async function chatPhoto(chat: string): Promise<{ body: ArrayBuffer; type: string } | null> {
+  const info = (await tg("getChat", { chat_id: chat })) as { result?: { photo?: { small_file_id?: string } } } | null;
+  const fileId = info?.result?.photo?.small_file_id;
+  if (!fileId) return null;
+  const f = (await tg("getFile", { file_id: fileId })) as { result?: { file_path?: string } } | null;
+  const path = f?.result?.file_path;
+  if (!path) return null;
+  const res = await fetch(`https://api.telegram.org/file/bot${botToken()}/${path}`);
+  if (!res.ok) return null;
+  return { body: await res.arrayBuffer(), type: res.headers.get("content-type") || "image/jpeg" };
+}
+
 export async function isChannelMember(chatId: string, userId: string | number) {
   const res = await fetch(
     `${API()}/getChatMember?chat_id=${encodeURIComponent(chatId)}&user_id=${userId}`

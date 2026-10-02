@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { APP } from "@/lib/config";
 import { openLink } from "@/lib/telegram";
-import { doClaimDailyTask, doClaimTask, doOpenTask, getTasks } from "@/lib/api.functions";
+import { doClaimDailyTask, doClaimTask, doOpenTask, doVerifyTask, getTasks } from "@/lib/api.functions";
 import { useAppState } from "./useApp";
 import { Card, GhostButton, GoldButton, Guide, Pill, SectionTitle } from "./ui";
 
@@ -211,53 +211,107 @@ function TaskGroup({
         <p className="py-4 text-center text-xs text-muted-foreground">{empty}</p>
       ) : (
         <div className="space-y-3">
-          {[...tasks].sort((a, b) => Number(done.includes(a.id)) - Number(done.includes(b.id))).map((t) => {
-            const claimed = done.includes(t.id);
-            const openedAt = opened[t.id] ?? 0;
-            const canClaim =
-              t.kind === "channel" ? true : openedAt > 0 && Date.now() - openedAt >= 5000;
-            return (
-              <div key={t.id} className="rounded-xl border border-border bg-background/40 p-3">
-                <div className="flex items-start gap-2">
-                  <TaskLogo src={t.imageUrl} fallback={t.kind === "channel" ? "📢" : "🕹"} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-bold">{t.title}</p>
-                    {t.description && (
-                      <p className="text-[11px] text-muted-foreground">{t.description}</p>
-                    )}
-                  </div>
-                  <Pill tone="success">+{t.reward}</Pill>
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <GhostButton
-                    onClick={() => {
-                      setOpened({ ...opened, [t.id]: Date.now() });
-                      void doOpenTask({ data: { initData: auth, taskId: t.id } }).catch(() => {});
-                      openLink(t.url);
-                    }}
-                  >
-                    🔗 Open
-                  </GhostButton>
-                  <GoldButton
-                    disabled={busy || claimed || !canClaim}
-                    onClick={() =>
-                      void run(
-                        () =>
-                          doClaimTask({
-                            data: { initData: auth, taskId: t.id, openedAt },
-                          }),
-                        (r) => `🎉 +${r?.reward} ${APP.tokenName}`
-                      )
-                    }
-                  >
-                    {claimed ? "✅ Done" : canClaim ? "🎁 Claim" : "⏱ Wait 5s"}
-                  </GoldButton>
-                </div>
-              </div>
-            );
-          })}
+          {[...tasks].sort((a, b) => Number(done.includes(a.id)) - Number(done.includes(b.id))).map((t, i) => (
+            <TaskRow
+              key={t.id}
+              n={i + 1}
+              t={t}
+              claimed={done.includes(t.id)}
+              openedAt={opened[t.id] ?? 0}
+              onOpened={(at) => setOpened({ ...opened, [t.id]: at })}
+            />
+          ))}
         </div>
       )}
     </Card>
+  );
+}
+
+function TaskRow({
+  n,
+  t,
+  claimed,
+  openedAt,
+  onOpened,
+}: {
+  n: number;
+  t: Task;
+  claimed: boolean;
+  openedAt: number;
+  onOpened: (at: number) => void;
+}) {
+  const { auth, run, busy } = useAppState();
+  const [now, setNow] = useState(Date.now());
+  const [verified, setVerified] = useState(false);
+  const [checking, setChecking] = useState(false);
+  useEffect(() => {
+    if (!openedAt || verified || claimed) return;
+    const id = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(id);
+  }, [openedAt, verified, claimed]);
+  const waitLeft = openedAt ? Math.max(0, 5 - Math.floor((now - openedAt) / 1000)) : 5;
+
+  const start = () => {
+    onOpened(Date.now());
+    setNow(Date.now());
+    void doOpenTask({ data: { initData: auth, taskId: t.id } }).catch(() => {});
+    openLink(t.url);
+  };
+  const verify = async () => {
+    setChecking(true);
+    try {
+      await doVerifyTask({ data: { initData: auth, taskId: t.id } });
+      setVerified(true);
+    } catch (e) {
+      const { toast } = await import("sonner");
+      toast.error(e instanceof Error ? e.message : "Not verified yet");
+    } finally {
+      setChecking(false);
+    }
+  };
+  const claim = () =>
+    void run(
+      () => doClaimTask({ data: { initData: auth, taskId: t.id, openedAt } }),
+      (r) => `🎉 +${r?.reward} ${APP.tokenName}`
+    );
+
+  let label = "▶️ Start";
+  let action: () => void = start;
+  let disabled = busy;
+  if (claimed) {
+    label = "✅ Done";
+    disabled = true;
+  } else if (verified) {
+    label = `🎁 Claim +${t.reward}`;
+    action = claim;
+  } else if (openedAt) {
+    if (waitLeft > 0) {
+      label = `⏱ Verify in ${waitLeft}s`;
+      disabled = true;
+    } else {
+      label = checking ? "🔎 Verifying…" : "🔎 Verify";
+      action = () => void verify();
+      disabled = busy || checking;
+    }
+  }
+
+  return (
+    <div className={`rounded-xl border border-border bg-background/40 p-3 ${claimed ? "opacity-60" : ""}`}>
+      <div className="flex items-start gap-2">
+        <span className="mt-2 w-5 shrink-0 text-center text-xs font-black text-primary">{n}</span>
+        <TaskLogo src={t.imageUrl} fallback={t.kind === "channel" ? "📢" : "🕹"} />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-bold">{t.title}</p>
+          {t.description && <p className="text-[11px] text-muted-foreground">{t.description}</p>}
+        </div>
+        <Pill tone="success">+{t.reward}</Pill>
+      </div>
+      <div className="mt-3 flex gap-2">
+        {openedAt > 0 && !claimed && (
+          <GhostButton className="w-auto px-3" onClick={() => openLink(t.url)}>🔗</GhostButton>
+        )}
+        <GoldButton disabled={disabled} onClick={action}>{label}</GoldButton>
+      </div>
+    </div>
   );
 }
