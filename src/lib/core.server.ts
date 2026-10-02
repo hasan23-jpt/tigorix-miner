@@ -1,5 +1,5 @@
 /** Tigorix business logic. Server only — never imported by the browser. */
-import { APP, DAILY_REWARDS, utcDayKey } from "./config";
+import { APP, DAILY_REWARDS, REQUIRED_CHANNELS, utcDayKey } from "./config";
 import {
   getDoc,
   setDoc,
@@ -559,11 +559,6 @@ export async function requiredChannelsStatus(userId: string) {
     }))
   );
   return { channels: rows, allJoined: rows.every((r) => r.joined) };
-}
-
-const _unused_listTasks_end = 0;
-void _unused_listTasks_end;
-function _noop() {
 }
 
 export async function taskStatus(user: UserDoc) {
