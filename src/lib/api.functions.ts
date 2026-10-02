@@ -335,10 +335,10 @@ export const doClaimSite = createServerFn({ method: "POST" })
   .handler(async ({ data }) => act(data.initData, ({ user }) => claimSite(user, str(data.siteId, 60), num(data.openedAt))));
 
 export const getLeaderboard = createServerFn({ method: "POST" })
-  .inputValidator((d: Auth) => d)
+  .inputValidator((d: Auth & { kind?: "earn" | "refer" }) => d)
   .handler(async ({ data }) => {
     await session(data.initData);
-    return leaderboard();
+    return leaderboard(data.kind === "refer" ? "refer" : "earn");
   });
 
 /* --------------------------------- admin -------------------------------- */
