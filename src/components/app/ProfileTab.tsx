@@ -1,3 +1,5 @@
+import { toast } from "sonner";
+import { MIN_WATCH_MS, adErrorMessage, hasBlock, showAd } from "@/lib/adnetworks";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -15,7 +17,7 @@ import {
 } from "lucide-react";
 import { APP, fmt } from "@/lib/config";
 import { openLink } from "@/lib/telegram";
-import { doSetPrefs, doSetWallet, doWithdraw, getFinance, getLeaderboard } from "@/lib/api.functions";
+import { doRecordWithdrawAd, doSetPrefs, doSetWallet, doWithdraw, getFinance, getLeaderboard } from "@/lib/api.functions";
 import { LANGS, useI18n } from "@/lib/i18n";
 import { useAppState } from "./useApp";
 import { useAdGate } from "./useAdGate";
@@ -354,30 +356,76 @@ function TransactionsView() {
 }
 
 function LeaderboardView() {
-  const { auth } = useAppState();
-  const { data } = useQuery({
-    queryKey: ["leaderboard"],
-    queryFn: () => getLeaderboard({ data: { initData: auth } }),
+  const { auth, state } = useAppState();
+  const [kind, setKind] = useState<"earn" | "refer">("earn");
+  const { data, isLoading } = useQuery({
+    queryKey: ["leaderboard", kind],
+    queryFn: () => getLeaderboard({ data: { initData: auth, kind } }),
+    staleTime: 60000,
   });
+  const rows = data ?? [];
+  const podium = rows.slice(0, 3);
+  const rest = rows.slice(3);
+  const val = (r: (typeof rows)[number]) =>
+    kind === "earn" ? `${fmt(r.earned)} ${APP.tokenName}` : `${fmt(r.refs)} 👥 · ${fmt(r.active)} ✅`;
+  const order = [1, 0, 2];
   return (
-    <Card>
-      <SectionTitle icon="🏆" title="Top Tigers" />
-      <div className="space-y-2">
-        {(data ?? []).map((r) => (
-          <div
-            key={r.rank}
-            className="flex items-center gap-3 rounded-lg border border-border bg-background/40 px-3 py-2 text-xs"
+    <div className="space-y-4">
+      <div className="surface-card grid grid-cols-2 gap-2 p-1.5">
+        {(["earn", "refer"] as const).map((k) => (
+          <button
+            key={k}
+            onClick={() => setKind(k)}
+            className={`rounded-lg py-2.5 text-xs font-extrabold transition ${kind === k ? "bg-gold-gradient text-primary-foreground" : "text-muted-foreground"}`}
           >
-            <span className="w-6 font-black text-primary">
-              {r.rank === 1 ? "🥇" : r.rank === 2 ? "🥈" : r.rank === 3 ? "🥉" : r.rank}
-            </span>
-            <span className="flex-1 truncate font-bold">{r.name}</span>
-            <span className="text-muted-foreground">{fmt(r.earned)}</span>
-          </div>
+            {k === "earn" ? "💰 Top Earners" : "👥 Top Referrers"}
+          </button>
         ))}
-        {!data?.length && <p className="py-4 text-center text-xs text-muted-foreground">No data yet.</p>}
       </div>
-    </Card>
+      <Card>
+        <SectionTitle icon="🏆" title={kind === "earn" ? "Top Earners" : "Top Referrers"} />
+        {isLoading ? (
+          <p className="py-6 text-center text-xs text-muted-foreground">Loading…</p>
+        ) : !rows.length ? (
+          <p className="py-6 text-center text-xs text-muted-foreground">No data yet.</p>
+        ) : (
+          <>
+            <div className="mb-4 grid grid-cols-3 items-end gap-2">
+              {order.map((i) => {
+                const r = podium[i];
+                if (!r) return <div key={i} />;
+                const h = i === 0 ? "h-24" : i === 1 ? "h-16" : "h-12";
+                return (
+                  <div key={i} className="flex flex-col items-center text-center">
+                    <span className={`text-3xl ${i === 0 ? "animate-float" : ""}`}>{["🥇", "🥈", "🥉"][i]}</span>
+                    {r.photo ? (
+                      <img src={r.photo} alt="" className="mt-1 size-12 rounded-full object-cover ring-2 ring-primary" />
+                    ) : (
+                      <span className="bg-gold-gradient mt-1 grid size-12 place-items-center rounded-full text-lg">🐯</span>
+                    )}
+                    <p className="mt-1 w-full truncate text-[11px] font-extrabold">{r.name}</p>
+                    <p className="text-[10px] text-muted-foreground">{val(r)}</p>
+                    <div className={`bg-gold-gradient mt-1 w-full rounded-t-xl opacity-80 ${h}`} />
+                  </div>
+                );
+              })}
+            </div>
+            <div className="space-y-2">
+              {rest.map((r) => (
+                <div
+                  key={r.rank}
+                  className={`flex items-center gap-3 rounded-xl border px-3 py-2 text-xs ${r.name === (state.user.username ? `@${state.user.username}` : "") ? "border-primary bg-primary/10" : "border-border bg-background/40"}`}
+                >
+                  <span className="w-6 text-center font-black text-primary">{r.rank}</span>
+                  <span className="flex-1 truncate font-bold">{r.name}</span>
+                  <span className="font-bold text-muted-foreground">{val(r)}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </Card>
+    </div>
   );
 }
 
@@ -544,7 +592,9 @@ function WithdrawGate({
   onSubmit: () => void;
   children: React.ReactNode;
 }) {
-  const { gateWithRewardAds, watchingAd } = useAdGate();
+  const { boot, auth } = useAppState();
+  const [watchingAd, setWatching] = useState(0);
+  const [watched, setWatched] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -553,7 +603,26 @@ function WithdrawGate({
 
   const e = data?.eligibility;
   const rules = data?.rules;
-  const adsToWatch = rules?.adsToWatch ?? 3;
+  const rewardBlock = String((boot.cfg as Record<string, unknown>)["adsgramRewardBlockId"] ?? "");
+  const adsToWatch = hasBlock(rewardBlock) ? (rules?.adsToWatch ?? 3) : 0;
+  const seen = Math.min(adsToWatch, watched ?? data?.adsWatched ?? 0);
+  const watchOne = async () => {
+    setWatching(1);
+    try {
+      const r = await showAd("reward", rewardBlock, MIN_WATCH_MS);
+      if (!r.ok) {
+        toast.error(adErrorMessage(r), { description: `${seen}/${adsToWatch} saved — tap again to retry.` });
+        return;
+      }
+      const res = await doRecordWithdrawAd({ data: { initData: auth } });
+      setWatched(res.watched);
+      toast.success(`📺 Ad ${res.watched}/${adsToWatch} counted`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save ad");
+    } finally {
+      setWatching(0);
+    }
+  };
   const cooldownLeft = e && e.nextWithdrawAt > now ? e.nextWithdrawAt - now : 0;
 
   const rows: { ok: boolean; label: string }[] = [];
@@ -591,15 +660,35 @@ function WithdrawGate({
           )}
         </div>
       )}
+      {allOk && adsToWatch > 0 && (
+        <div className="flex items-center justify-center gap-2">
+          {Array.from({ length: adsToWatch }).map((_, i) => (
+            <span
+              key={i}
+              className={`grid size-8 place-items-center rounded-full text-xs font-black ${i < seen ? "bg-success/20 text-success ring-1 ring-success/50" : "bg-muted text-muted-foreground"}`}
+            >
+              {i < seen ? "✓" : i + 1}
+            </span>
+          ))}
+        </div>
+      )}
       <GoldButton
         disabled={busy || watchingAd > 0 || !allOk}
-        onClick={() => void gateWithRewardAds(adsToWatch, onSubmit)}
+        onClick={() => {
+          if (seen < adsToWatch) void watchOne();
+          else {
+            onSubmit();
+            setWatched(0);
+          }
+        }}
       >
-        {watchingAd > 0
-          ? `📺 Watch ads… ${adsToWatch - watchingAd + 1}/${adsToWatch}`
-          : allOk
-            ? `🚀 Watch ${adsToWatch} ads & Request Withdrawal`
-            : "🔒 Complete requirements to withdraw"}
+        {!allOk
+          ? "🔒 Complete requirements to withdraw"
+          : watchingAd > 0
+            ? `📺 Ad playing… ${seen + 1}/${adsToWatch}`
+            : seen < adsToWatch
+              ? `📺 Watch ad ${seen + 1}/${adsToWatch}`
+              : "🚀 Submit Withdrawal Request"}
       </GoldButton>
     </div>
   );
