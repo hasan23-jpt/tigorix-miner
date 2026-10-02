@@ -508,6 +508,7 @@ export type TaskDoc = {
   active: boolean;
   createdAt: number;
   imageUrl?: string;
+  order?: number;
 };
 
 /** Only allow direct https image links (ImgBB i.ibb.co and common image hosts). */
@@ -526,7 +527,43 @@ export function safeImageUrl(raw: unknown): string {
 
 export async function listTasks() {
   const tasks = await queryDocs<TaskDoc>("tasks", { limit: 200 });
-  return tasks.filter((t) => t.active !== false);
+  return tasks
+    .filter((t) => t.active !== false)
+    .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999) || (a.createdAt ?? 0) - (b.createdAt ?? 0));
+}
+
+/** Checks a task without paying: channel membership or 5s since server-recorded open. */
+export async function verifyTask(user: UserDoc, taskId: string) {
+  assertActive(user);
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(taskId)) throw new Error("Invalid task.");
+  const task = await getDoc<TaskDoc>(`tasks/${taskId}`);
+  if (!task || task.active === false) throw new Error("Task is no longer available.");
+  const opened = await getDoc<{ at: number }>(`taskOpens/${user.id}_${taskId}`);
+  if (!opened) throw new Error("▶️ Tap Start first.");
+  if (task.kind === "channel") {
+    const chatId = task.chatId || task.url.replace("https://t.me/", "@");
+    if (!(await isChannelMember(chatId, user.id)))
+      throw new Error("📣 You are not a member yet. Join and verify again.");
+  } else if (Date.now() - opened.at < 5000) {
+    throw new Error("⏱ Please stay on the link for at least 5 seconds.");
+  }
+  return { ok: true };
+}
+
+/** Which required channels the user has not joined (checked live by the bot). */
+export async function requiredChannelsStatus(userId: string) {
+  const rows = await Promise.all(
+    REQUIRED_CHANNELS.map(async (c) => ({
+      ...c,
+      joined: await isChannelMember(`@${c.id}`, userId).catch(() => false),
+    }))
+  );
+  return { channels: rows, allJoined: rows.every((r) => r.joined) };
+}
+
+const _unused_listTasks_end = 0;
+void _unused_listTasks_end;
+function _noop() {
 }
 
 export async function taskStatus(user: UserDoc) {
@@ -1041,6 +1078,30 @@ export async function withdrawEligibility(user: UserDoc, cfg: Cfg): Promise<With
   };
 }
 
+function wdAdsNeeded(cfg: Cfg) {
+  return String(cfg.adsgramRewardBlockId ?? "").trim() ? Math.max(0, cfg.withdrawAdsToWatch ?? 3) : 0;
+}
+
+export async function withdrawAdsWatched(userId: string) {
+  const d = await getDoc<{ day: string; count: number }>(`wdAds/${userId}`);
+  return d && d.day === utcDayKey() ? d.count : 0;
+}
+
+/** Counts one withdrawal-gate ad (one per button press, at least 5s apart). */
+export async function recordWithdrawAd(user: UserDoc, cfg: Cfg) {
+  assertActive(user);
+  const need = wdAdsNeeded(cfg);
+  const path = `wdAds/${user.id}`;
+  const d = await getDoc<{ day: string; count: number; at: number }>(path);
+  const today = utcDayKey();
+  const count = d && d.day === today ? d.count : 0;
+  if (count >= need) return { watched: count, needed: need };
+  if (d && d.day === today && Date.now() - (d.at ?? 0) < 5000)
+    throw new Error("⏱ Please wait a few seconds before the next ad.");
+  await setDoc(path, { day: today, count: count + 1, at: Date.now() });
+  return { watched: count + 1, needed: need };
+}
+
 export async function requestWithdraw(user: UserDoc, cfg: Cfg, tokens: number) {
   assertActive(user);
   if (cfg.withdrawEnabled === false)
@@ -1057,6 +1118,11 @@ export async function requestWithdraw(user: UserDoc, cfg: Cfg, tokens: number) {
     const missing = elig.checks.filter((c) => !c.ok).map((c) => c.label);
     throw new Error(`⚠️ Withdrawal requirements not met:\n• ${missing.join("\n• ")}`);
   }
+
+  const needAds = wdAdsNeeded(cfg);
+  if (needAds > 0 && (await withdrawAdsWatched(user.id)) < needAds)
+    throw new Error(`📺 Watch ${needAds} ads first, then submit.`);
+  await deleteDoc(`wdAds/${user.id}`);
 
   const q = withdrawQuote(amount, cfg);
   const number = (user.withdrawCount ?? 0) + 1;
@@ -1155,12 +1221,13 @@ function maskWallet(w: string) {
   return w.length > 12 ? `${w.slice(0, 6)}…${w.slice(-4)}` : w;
 }
 
-export async function leaderboard() {
-  const users = await queryDocs<UserDoc>("users", {
-    orderBy: { field: "totalEarned", dir: "DESCENDING" },
-    limit: 30,
-  });
+export async function leaderboard(kind: "earn" | "refer" = "earn") {
+  const all = (await queryDocs<UserDoc>("users", { limit: 5000 })).filter((u) => !u.suspended);
+  const key = (u: UserDoc) => (kind === "refer" ? (u.refActive ?? 0) * 1e6 + (u.refCount ?? 0) : u.totalEarned ?? 0);
+  const users = all.sort((a, b) => key(b) - key(a)).slice(0, 50);
   return users.map((u, i) => ({
+    photo: u.photoUrl ?? "",
+    active: u.refActive ?? 0,
     rank: i + 1,
     name: label(u),
     earned: u.totalEarned ?? 0,
@@ -1351,7 +1418,9 @@ export async function adminSetUser(
 
 export async function adminSaveTask(task: Partial<TaskDoc> & { id?: string }) {
   const id = /^[A-Za-z0-9_-]{1,40}$/.test(String(task.id ?? "")) ? String(task.id) : `t${Date.now()}`;
+  const prev = await getDoc<TaskDoc>(`tasks/${id}`);
   await setDoc(`tasks/${id}`, {
+    order: Math.max(0, Math.min(9999, Math.floor(Number(task.order) || 0))) || (prev?.order ?? 9999),
     group: task.group ?? "main",
     kind: task.kind ?? "channel",
     title: task.title ?? "New task",
@@ -1361,7 +1430,7 @@ export async function adminSaveTask(task: Partial<TaskDoc> & { id?: string }) {
     reward: Math.min(1_000_000, Math.max(0, Math.floor(Number(task.reward) || 0))),
     imageUrl: safeImageUrl(task.imageUrl),
     active: task.active !== false,
-    createdAt: task.createdAt ?? Date.now(),
+    createdAt: prev?.createdAt ?? Date.now(),
   });
   return { id };
 }
@@ -1391,18 +1460,26 @@ export async function adminDeleteCode(code: string) {
 
 export async function adminBroadcast(
   text: string,
-  opts: { photo?: string; buttons?: { text: string; url: string }[] } = {}
+  opts: { photo?: string; buttons?: { text: string; url: string }[]; target?: "users" | "community" | "both" } = {}
 ) {
-  const users = await queryDocs<UserDoc>("users", { limit: 1000 });
+  const target = opts.target ?? "users";
+  const users = target === "community" ? [] : await queryDocs<UserDoc>("users", { limit: 5000 });
   const keyboard: { text: string; url: string }[][] = [];
   const extra = (opts.buttons ?? []).filter((b) => b.text && b.url);
-  if (extra.length) for (const b of extra) keyboard.push([b]);
+  for (let i = 0; i < extra.length; i += 2) keyboard.push(extra.slice(i, i + 2));
   keyboard.push([btn.miniApp], [btn.community, btn.payment]);
   const photo = (opts.photo ?? "").trim();
   let sent = 0;
+  if (target !== "users") {
+    const body = text;
+    const r = photo
+      ? await sendPhoto(APP.communityChatId, photo, body, keyboard)
+      : await sendMessage(APP.communityChatId, body, keyboard);
+    if (r) sent++;
+  }
   for (const u of users) {
     if (u.notifications === false) continue;
-    const body = `\ud83d\udce2 ${text}`;
+    const body = text;
     const r = photo
       ? await sendPhoto(u.id, photo, body, keyboard)
       : await sendMessage(u.id, body, keyboard);
@@ -1440,7 +1517,7 @@ export async function adminFixBalance(userId: string) {
 
 export async function adminSearchUsers(query: string) {
   const q = String(query ?? "").trim().toLowerCase().replace(/^@/, "");
-  const users = await queryDocs<UserDoc>("users", { limit: 1000 });
+  const users = await queryDocs<UserDoc>("users", { limit: 5000 });
   const matches = (q ? users.filter(
     (u) =>
       u.id.includes(q) ||
@@ -1448,7 +1525,7 @@ export async function adminSearchUsers(query: string) {
       (u.firstName ?? "").toLowerCase().includes(q) ||
       (u.wallet ?? "").toLowerCase().includes(q)
   ) : users.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
-  ).slice(0, 30);
+  ).slice(0, 2000);
   return matches.map((u) => ({
     id: u.id,
     name: label(u),

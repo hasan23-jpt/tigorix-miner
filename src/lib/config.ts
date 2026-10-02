@@ -11,6 +11,14 @@ export const APP = {
   tokensPerUsd: 100000,
 } as const;
 
+/** Channels every user must stay joined to (bot is admin in each). */
+export const REQUIRED_CHANNELS = [
+  { id: "Tigorix", name: "Tigorix Community", url: "https://t.me/Tigorix" },
+  { id: "Tigorixpay", name: "Tigorix Payments", url: "https://t.me/Tigorixpay" },
+  { id: "EarningHub1236", name: "EarningHub", url: "https://t.me/EarningHub1236" },
+  { id: "tigorixchat", name: "Tigorix Chat Group", url: "https://t.me/tigorixchat" },
+] as const;
+
 export const DAILY_REWARDS = [30, 40, 50, 70, 90, 120, 150];
 
 export function tokensToUsd(tokens: number) {
