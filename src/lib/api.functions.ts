@@ -10,6 +10,10 @@ import {
   listTasks,
   taskStatus,
   claimTask,
+  verifyTask,
+  requiredChannelsStatus,
+  recordWithdrawAd,
+  withdrawAdsWatched,
   openTask,
   claimDailyTask,
   recordAdView,
@@ -297,6 +301,21 @@ export const doWithdraw = createServerFn({ method: "POST" })
   .inputValidator((d: Auth & { tokens: number }) => d)
   .handler(async ({ data }) => act(data.initData, ({ user, cfg }) => requestWithdraw(user, cfg, num(data.tokens))));
 
+export const doVerifyTask = createServerFn({ method: "POST" })
+  .inputValidator((d: Auth & { taskId: string }) => d)
+  .handler(async ({ data }) => act(data.initData, ({ user }) => verifyTask(user, str(data.taskId, 60))));
+
+export const getRequiredChannels = createServerFn({ method: "POST" })
+  .inputValidator((d: Auth) => d)
+  .handler(async ({ data }) => {
+    const { user } = await session(data.initData);
+    return requiredChannelsStatus(user.id);
+  });
+
+export const doRecordWithdrawAd = createServerFn({ method: "POST" })
+  .inputValidator((d: Auth) => d)
+  .handler(async ({ data }) => act(data.initData, ({ user, cfg }) => recordWithdrawAd(user, cfg)));
+
 export const getFinance = createServerFn({ method: "POST" })
   .inputValidator((d: Auth) => d)
   .handler(async ({ data }) => {
@@ -306,6 +325,7 @@ export const getFinance = createServerFn({ method: "POST" })
       listWithdrawals(user.id),
       withdrawEligibility(user, cfg),
     ]);
+    const adsWatched = await withdrawAdsWatched(user.id);
     const quote = withdrawQuote(user.balance, cfg);
     return {
       transactions: tx,
@@ -319,6 +339,7 @@ export const getFinance = createServerFn({ method: "POST" })
         cooldownHours: cfg.withdrawCooldownHours,
         adsToWatch: cfg.withdrawAdsToWatch,
       },
+      adsWatched,
     };
   });
 
@@ -400,6 +421,7 @@ export const adminTaskSave = createServerFn({ method: "POST" })
           reward?: number;
           active?: boolean;
           imageUrl?: string;
+          order?: number;
         };
       }
     ) => d
@@ -439,14 +461,16 @@ export const adminSendBroadcast = createServerFn({ method: "POST" })
         text: string;
         photo?: string;
         buttons?: { text: string; url: string }[];
+        target?: "users" | "community" | "both";
       }
     ) => d
   )
   .handler(async ({ data }) => {
     await adminSession(data.initData, data.password);
-    return adminBroadcast(String(data.text ?? "").slice(0, 3000), {
+    return adminBroadcast(String(data.text ?? "").slice(0, 4000), {
+      target: data.target === "community" || data.target === "both" ? data.target : "users",
       photo: String(data.photo ?? "").slice(0, 500),
-      buttons: (data.buttons ?? []).slice(0, 3).map((b) => ({
+      buttons: (data.buttons ?? []).slice(0, 8).filter((b) => /^https:\/\//.test(String(b.url ?? ""))).map((b) => ({
         text: String(b.text ?? "").slice(0, 40),
         url: String(b.url ?? "").slice(0, 300),
       })),
