@@ -188,55 +188,64 @@ function BroadcastForm({ admin }: { admin: AdminAuth }) {
   const { run, busy } = useAppState();
   const [text, setText] = useState("");
   const [photo, setPhoto] = useState("");
-  const [btnText, setBtnText] = useState("");
-  const [btnUrl, setBtnUrl] = useState("");
+  const [btns, setBtns] = useState("");
+  const [target, setTarget] = useState<"users" | "community" | "both">("users");
+  const buttons = btns
+    .split("\n")
+    .map((l) => l.split("|").map((x) => x.trim()))
+    .filter((p) => p[0] && p[1])
+    .map((p) => ({ text: p[0]!, url: p[1]! }));
   return (
     <div className="space-y-2">
       <Guide>
-        Messages always include the Open Mini App, Community and Payments buttons. Add an image URL
-        to send it as a photo post, and an extra custom button if you need one.
+        Line breaks and spaces are kept. HTML works: &lt;b&gt;bold&lt;/b&gt;, &lt;i&gt;italic&lt;/i&gt;,
+        &lt;u&gt;, &lt;code&gt;, &lt;a href=&quot;…&quot;&gt;link&lt;/a&gt;, &lt;blockquote&gt;. Telegram
+        custom emoji: &lt;tg-emoji emoji-id=&quot;ID&quot;&gt;🔥&lt;/tg-emoji&gt; (works only if the bot has a
+        Fragment username). Open Mini App, Community and Payments buttons are always added.
       </Guide>
-      <Field label="Message" value={text} onChange={(e) => setText(e.target.value)} />
-      <Field
-        label="Image URL (optional)"
-        placeholder="https://…/banner.png"
-        value={photo}
-        onChange={(e) => setPhoto(e.target.value)}
-      />
-      <div className="grid grid-cols-2 gap-2">
-        <Field
-          label="Extra button text"
-          value={btnText}
-          onChange={(e) => setBtnText(e.target.value)}
+      <label className="block space-y-1">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Message</span>
+        <textarea
+          rows={7}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          className="w-full whitespace-pre-wrap rounded-xl border border-input bg-background/70 px-3 py-2.5 font-mono text-sm outline-none focus:border-primary"
         />
-        <Field
-          label="Extra button URL"
-          value={btnUrl}
-          onChange={(e) => setBtnUrl(e.target.value)}
+      </label>
+      <Field label="Image URL (optional, ImgBB direct link)" value={photo} onChange={(e) => setPhoto(e.target.value)} />
+      <label className="block space-y-1">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Buttons — one per line: Text | https://link
+        </span>
+        <textarea
+          rows={3}
+          value={btns}
+          placeholder={"🎁 Bonus | https://t.me/Tigorix\n🌐 Website | https://example.com"}
+          onChange={(e) => setBtns(e.target.value)}
+          className="w-full rounded-xl border border-input bg-background/70 px-3 py-2.5 text-sm outline-none focus:border-primary"
         />
+      </label>
+      <div className="grid grid-cols-3 gap-2">
+        {(["users", "community", "both"] as const).map((k) => (
+          <button
+            key={k}
+            onClick={() => setTarget(k)}
+            className={`rounded-lg border py-2 text-[11px] font-extrabold ${target === k ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}
+          >
+            {k === "users" ? "👥 All users" : k === "community" ? "📣 Community" : "🌍 Both"}
+          </button>
+        ))}
       </div>
       <GoldButton
         disabled={busy || !text.trim()}
         onClick={() =>
           void run(
-            () =>
-              adminSendBroadcast({
-                data: {
-                  ...admin,
-                  text,
-                  photo: photo.trim(),
-                  buttons:
-                    btnText.trim() && btnUrl.trim()
-                      ? [{ text: btnText.trim(), url: btnUrl.trim() }]
-                      : [],
-                },
-              }),
-            (r) => `📢 Sent to ${r?.sent ?? 0} users`
+            () => adminSendBroadcast({ data: { ...admin, text, photo: photo.trim(), buttons, target } }),
+            (r) => `📢 Sent (${r?.sent ?? 0})`
           ).then(() => {
             setText("");
             setPhoto("");
-            setBtnText("");
-            setBtnUrl("");
+            setBtns("");
           })
         }
       >
@@ -360,6 +369,9 @@ function TasksAdmin({
     url: string;
     reward: number;
     imageUrl?: string;
+    order?: number;
+    chatId?: string;
+    description?: string;
   }[];
   onDone: () => void;
 }) {
@@ -369,6 +381,8 @@ function TasksAdmin({
     url: "",
     chatId: "",
     imageUrl: "",
+    id: "",
+    order: "",
     reward: "100",
     group: "main" as "main" | "partner",
     kind: "channel" as "channel" | "app",
@@ -377,7 +391,11 @@ function TasksAdmin({
   return (
     <div className="space-y-4">
       <Card>
-        <SectionTitle icon="➕" title="Add / Edit Task" />
+        <SectionTitle
+          icon={form.id ? "✏️" : "➕"}
+          title={form.id ? "Edit Task" : "Add Task"}
+          action={form.id ? <Pill tone="info">editing</Pill> : undefined}
+        />
         <div className="space-y-2">
           <Field label="Title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
           <Field label="URL" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
@@ -394,6 +412,12 @@ function TasksAdmin({
           {form.imageUrl && (
             <img src={form.imageUrl} alt="" className="size-12 rounded-xl border border-border object-cover" />
           )}
+          <Field
+            label="Position (1 = top)"
+            inputMode="numeric"
+            value={form.order}
+            onChange={(e) => setForm({ ...form, order: e.target.value.replace(/[^0-9]/g, "") })}
+          />
           <Field
             label="Reward"
             inputMode="numeric"
@@ -431,6 +455,8 @@ function TasksAdmin({
                         url: form.url,
                         chatId: form.chatId,
                         imageUrl: form.imageUrl,
+                        ...(form.id ? { id: form.id } : {}),
+                        order: Number(form.order || 0),
                         reward: Number(form.reward || 0),
                         group: form.group,
                         kind: form.kind,
@@ -440,13 +466,18 @@ function TasksAdmin({
                   }),
                 () => "✅ Task saved"
               ).then(() => {
-                setForm({ ...form, title: "", url: "", chatId: "", imageUrl: "" });
+                setForm({ ...form, id: "", order: "", title: "", url: "", chatId: "", imageUrl: "" });
                 onDone();
               })
             }
           >
-            💾 Save Task
+            {form.id ? "💾 Update Task" : "💾 Save Task"}
           </GoldButton>
+          {form.id && (
+            <GhostButton onClick={() => setForm({ ...form, id: "", order: "", title: "", url: "", chatId: "", imageUrl: "" })}>
+              ✖ Cancel edit
+            </GhostButton>
+          )}
         </div>
       </Card>
 
@@ -455,7 +486,7 @@ function TasksAdmin({
         <div className="space-y-2">
           {tasks.map((t) => (
             <div key={t.id} className="rounded-xl border border-border bg-background/40 p-3 text-xs">
-              <p className="font-bold">{t.title}</p>
+              <p className="font-bold">#{t.order && t.order < 9999 ? t.order : "–"} · {t.title}</p>
               <p className="truncate text-[10px] text-muted-foreground">
                 {t.group} · {t.kind} · +{t.reward} · {t.url}
               </p>
@@ -465,7 +496,9 @@ function TasksAdmin({
                     setForm({
                       title: t.title,
                       url: t.url,
-                      chatId: "",
+                      id: t.id,
+                      order: t.order && t.order < 9999 ? String(t.order) : "",
+                      chatId: t.chatId ?? "",
                       imageUrl: t.imageUrl ?? "",
                       reward: String(t.reward),
                       group: t.group === "partner" ? "partner" : "main",
@@ -473,7 +506,7 @@ function TasksAdmin({
                     })
                   }
                 >
-                  ✏️ Load
+                  ✏️ Edit
                 </GhostButton>
                 <GhostButton
                   disabled={busy}
