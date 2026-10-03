@@ -15,6 +15,8 @@ export type PartnerDoc = {
   lastSentAt?: number;
   lastStatus?: string;
   fromTask?: boolean;
+  /** Optional custom button link for this channel (e.g. the channel owner's own referral link). */
+  btnLink?: string;
 };
 
 const DEFAULT_TEXT: Record<PartnerLang, string> = {
@@ -72,17 +74,26 @@ export async function listPartners() {
   return saved.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export async function savePartner(input: { chat: string; name: string; lang: string; active: boolean }) {
+export function normalizeBtnLink(raw: string) {
+  const l = String(raw ?? "").trim().slice(0, 300);
+  if (!l) return "";
+  if (!/^https:\/\//i.test(l)) throw new Error("Button link must start with https://");
+  return l;
+}
+
+export async function savePartner(input: { chat: string; name: string; lang: string; active: boolean; btnLink?: string }) {
   const chat = normalizeChat(input.chat);
   const lang = (PARTNER_LANGS as readonly string[]).includes(input.lang) ? (input.lang as PartnerLang) : "en";
   const id = idOf(chat);
-  await setDoc(`partners/${id}`, {
+  const doc: PartnerDoc = {
     id,
     chat,
     name: String(input.name ?? "").trim().slice(0, 60) || chat,
     lang,
     active: !!input.active,
-  });
+  };
+  if (input.btnLink !== undefined) doc.btnLink = normalizeBtnLink(input.btnLink);
+  await setDoc(`partners/${id}`, doc);
   return { ok: true, id };
 }
 
@@ -142,7 +153,9 @@ export async function sendPartners(opts: {
     }
     const text = (opts.texts?.[p.lang] ?? "").trim() || (opts.texts?.["en"] ?? "").trim() || DEFAULT_TEXT[p.lang];
     const b = BTN[p.lang];
-    const kb = [[{ text: b.start, url: refLink() }], [{ text: b.community, url: APP.communityChannel }]];
+    // Per-channel custom button link (e.g. that channel admin's own referral link) wins over the default.
+    const startUrl = p.btnLink && /^https:\/\//.test(p.btnLink) ? p.btnLink : refLink();
+    const kb = [[{ text: b.start, url: startUrl }], [{ text: b.community, url: APP.communityChannel }]];
     const r = photo ? await sendPhoto(p.chat, photo, text.slice(0, 1000), kb) : await sendMessage(p.chat, text.slice(0, 4000), kb);
     results.push({ name: p.name, ok: !!r, reason: r ? undefined : "send failed" });
     await setDoc(`partners/${p.id}`, { lastSentAt: Date.now(), lastStatus: r ? "sent ✅" : "send failed ❌" });

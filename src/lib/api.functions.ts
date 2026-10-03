@@ -550,7 +550,7 @@ export const adminPartners = createServerFn({ method: "POST" })
   });
 
 export const adminPartnerSave = createServerFn({ method: "POST" })
-  .inputValidator((d: AdminAuth & { chat: string; name: string; lang: string; active: boolean }) => d)
+  .inputValidator((d: AdminAuth & { chat: string; name: string; lang: string; active: boolean; btnLink?: string }) => d)
   .handler(async ({ data }) => {
     await adminSession(data.initData, data.password);
     const { savePartner } = await import("./partners.server");
@@ -559,6 +559,7 @@ export const adminPartnerSave = createServerFn({ method: "POST" })
       name: String(data.name ?? "").slice(0, 60),
       lang: String(data.lang ?? "en").slice(0, 5),
       active: !!data.active,
+      ...(data.btnLink !== undefined ? { btnLink: String(data.btnLink).slice(0, 300) } : {}),
     });
   });
 
