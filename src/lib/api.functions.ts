@@ -580,7 +580,7 @@ export const adminPartnerCheck = createServerFn({ method: "POST" })
 
 export const adminPartnerSend = createServerFn({ method: "POST" })
   .inputValidator(
-    (d: AdminAuth & { id?: string; texts?: Record<string, string>; photo?: string }) => d
+    (d: AdminAuth & { id?: string | undefined; texts?: Record<string, string>; photo?: string }) => d
   )
   .handler(async ({ data }) => {
     await adminSession(data.initData, data.password);
