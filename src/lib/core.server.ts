@@ -1042,11 +1042,6 @@ export async function withdrawEligibility(user: UserDoc, cfg: Cfg): Promise<With
       ok: validRefs >= cfg.withdrawMinRefs,
     },
     {
-      key: "tasks",
-      label: `All main tasks done (${mainTasksDone}/${tasks.length})`,
-      ok: tasks.length === 0 || mainTasksDone >= tasks.length,
-    },
-    {
       key: "pending",
       label: "No pending withdrawal",
       ok: !pending.length,
