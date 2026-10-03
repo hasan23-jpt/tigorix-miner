@@ -12,6 +12,7 @@ import { ReferTab } from "@/components/app/ReferTab";
 import { ProfileTab } from "@/components/app/ProfileTab";
 import { AdminPanel } from "@/components/app/AdminPanel";
 import { useAdGate } from "@/components/app/useAdGate";
+import { JoinGate } from "@/components/app/JoinGate";
 import { I18nProvider, useI18n } from "@/lib/i18n";
 
 export const Route = createFileRoute("/")({
@@ -125,6 +126,7 @@ function Shell() {
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-md flex-col">
+      {!state.admin && <JoinGate />}
       <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-border/60 bg-background/85 px-4 py-3 backdrop-blur">
         <img
           src="/tigorix-logo.png"
