@@ -14,6 +14,7 @@ export type PartnerDoc = {
   active: boolean;
   lastSentAt?: number;
   lastStatus?: string;
+  fromTask?: boolean;
 };
 
 const DEFAULT_TEXT: Record<PartnerLang, string> = {
@@ -47,9 +48,28 @@ const idOf = (chat: string) => chat.replace(/[^A-Za-z0-9_]/g, "_").slice(0, 60);
 const refLink = () => `${APP.miniAppLink}?startapp=${APP.adminTelegramId}`;
 
 export async function listPartners() {
-  return (await queryDocs<PartnerDoc>("partners", { limit: 500 })).sort((a, b) =>
-    a.name.localeCompare(b.name)
-  );
+  const [saved, tasks] = await Promise.all([
+    queryDocs<PartnerDoc>("partners", { limit: 500 }),
+    queryDocs<{ group?: string; kind?: string; chatId?: string; url?: string; title?: string }>("tasks", { limit: 500 }),
+  ]);
+  const have = new Set(saved.map((p) => p.id));
+  // Every partner task (existing or newly added) also appears as a partner channel.
+  for (const t of tasks) {
+    if (t.group !== "partner" || t.kind !== "channel") continue;
+    let chat = "";
+    try {
+      chat = normalizeChat(t.chatId || t.url || "");
+    } catch {
+      continue;
+    }
+    const id = idOf(chat);
+    if (have.has(id)) continue;
+    const doc: PartnerDoc = { id, chat, name: String(t.title ?? chat).slice(0, 60), lang: "en", active: true, fromTask: true };
+    await setDoc(`partners/${id}`, doc);
+    saved.push(doc);
+    have.add(id);
+  }
+  return saved.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function savePartner(input: { chat: string; name: string; lang: string; active: boolean }) {
