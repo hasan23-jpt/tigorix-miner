@@ -114,7 +114,7 @@ export function PartnersAdmin({ admin }: { admin: Admin }) {
             <div key={p.id} className="rounded-xl border border-border bg-background/40 p-3 text-xs">
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate font-bold">{p.name}</p>
+                  <p className="truncate font-bold">{p.name}{p.fromTask ? " · 🧩 partner task" : ""}</p>
                   <p className="text-[10px] text-muted-foreground">
                     {p.chat} · {LANGS.find((l) => l.id === p.lang)?.label}
                     {p.lastSentAt ? ` · last ${new Date(p.lastSentAt).toISOString().slice(5, 16).replace("T", " ")}` : ""}
