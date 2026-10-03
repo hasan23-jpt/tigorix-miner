@@ -32,6 +32,7 @@ export function PartnersAdmin({ admin }: { admin: Admin }) {
   const [photo, setPhoto] = useState("");
   const [texts, setTexts] = useState<Record<string, string>>({});
   const [editLang, setEditLang] = useState("en");
+  const [links, setLinks] = useState<Record<string, string>>({});
 
   const send = (id?: string) =>
     run(
@@ -123,6 +124,26 @@ export function PartnersAdmin({ admin }: { admin: Admin }) {
                 <Pill tone={p.active ? "success" : "warn"}>{p.active ? "active" : "paused"}</Pill>
               </div>
               {p.lastStatus && <p className="mt-1 text-[10px]">{p.lastStatus}</p>}
+              <div className="mt-2 flex items-center gap-1.5">
+                <input
+                  value={links[p.id] ?? p.btnLink ?? ""}
+                  onChange={(e) => setLinks({ ...links, [p.id]: e.target.value })}
+                  placeholder="Button link (https) — empty = your referral link"
+                  className="min-w-0 flex-1 rounded-lg border border-border bg-background/60 px-2 py-1.5 text-[10px]"
+                />
+                <GhostButton
+                  className="!w-auto px-2"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(
+                      () => adminPartnerSave({ data: { ...admin, chat: p.chat, name: p.name, lang: p.lang, active: p.active, btnLink: links[p.id] ?? p.btnLink ?? "" } }),
+                      () => "🔗 Button link saved"
+                    ).then(() => refetch())
+                  }
+                >
+                  💾
+                </GhostButton>
+              </div>
               <div className="mt-2 grid grid-cols-4 gap-1.5">
                 <GhostButton disabled={busy} onClick={() => void run(() => adminPartnerCheck({ data: { ...admin, id: p.id } }), (r) => (r?.ok ? "✅ Bot is admin" : "❌ Bot is not admin")).then(() => refetch())}>🔍</GhostButton>
                 <GhostButton disabled={busy} onClick={() => void send(p.id)}>📨</GhostButton>
