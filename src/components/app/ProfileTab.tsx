@@ -292,23 +292,19 @@ staleTime: 30000,
             {data.withdrawals.map((w) => (
               <div
                 key={w.id}
-                className="flex items-center justify-between rounded-lg border border-border bg-background/40 px-3 py-2 text-xs"
+                className="flex items-center gap-3 rounded-2xl border border-border bg-gradient-to-r from-success/10 to-transparent p-3 text-xs"
               >
-                <div>
-                  <p className="font-bold">
-                    #{w.number} · {fmt(w.tokens)} {APP.tokenName}
+                <UsdtLogo />
+                <div className="min-w-0 flex-1">
+                  <p className="font-black">
+                    ${(w.netUsd ?? 0).toFixed(4)} <span className="text-[10px] font-bold text-muted-foreground">USDT · BEP-20</span>
                   </p>
                   <p className="text-[10px] text-muted-foreground">
-                    ${(w.netUsd ?? 0).toFixed(4)} ·{" "}
-                    {new Date(w.at).toISOString().slice(0, 16).replace("T", " ")} UTC
+                    #{w.number} · {fmt(w.tokens)} {APP.tokenName} · {new Date(w.at).toISOString().slice(0, 16).replace("T", " ")} UTC
                   </p>
                 </div>
-                <Pill
-                  tone={
-                    w.status === "approved" ? "success" : w.status === "rejected" ? "danger" : "warn"
-                  }
-                >
-                  {w.status}
+                <Pill tone={w.status === "approved" ? "success" : w.status === "rejected" ? "danger" : "warn"}>
+                  {w.status === "approved" ? "✅ paid" : w.status === "rejected" ? "❌ rejected" : "⏳ pending"}
                 </Pill>
               </div>
             ))}
@@ -691,5 +687,14 @@ function WithdrawGate({
               : "🚀 Submit Withdrawal Request"}
       </GoldButton>
     </div>
+  );
+}
+
+function UsdtLogo() {
+  return (
+    <svg viewBox="0 0 32 32" className="size-9 shrink-0 drop-shadow" aria-label="USDT">
+      <circle cx="16" cy="16" r="16" fill="#26A17B" />
+      <path fill="#fff" d="M17.9 17.2v0c-.1 0-.7.1-1.9.1-1 0-1.7 0-1.9-.1-3.7-.2-6.5-.8-6.5-1.6s2.8-1.4 6.5-1.6v2.5c.2 0 .9.1 1.9.1 1.2 0 1.8-.1 1.9-.1v-2.5c3.7.2 6.4.8 6.4 1.6s-2.7 1.4-6.4 1.6zm0-3.4V11.6h5.2V8.2H8.9v3.4h5.2v2.2c-4.2.2-7.4 1-7.4 2s3.2 1.8 7.4 2v7.1h3.8v-7.1c4.2-.2 7.3-1 7.3-2s-3.1-1.8-7.3-2z" />
+    </svg>
   );
 }

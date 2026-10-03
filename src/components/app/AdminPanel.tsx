@@ -21,9 +21,10 @@ import {
   adminFixWebhook,
 } from "@/lib/api.functions";
 import { useAppState } from "./useApp";
+import { PartnersAdmin } from "./PartnersAdmin";
 import { Card, Field, GhostButton, GoldButton, Guide, Pill, SectionTitle, Stat } from "./ui";
 
-const TABS = ["overview", "withdrawals", "users", "suspended", "tasks", "codes", "ads", "settings"] as const;
+const TABS = ["overview", "withdrawals", "users", "suspended", "tasks", "codes", "ads", "partners", "settings"] as const;
 type Tab = (typeof TABS)[number];
 
 export function AdminPanel({ onClose }: { onClose: () => void }) {
@@ -167,6 +168,8 @@ staleTime: 30000,
           sites={data.sites ?? []}
           onDone={() => void refetch()}
         />
+      ) : tab === "partners" ? (
+        <PartnersAdmin admin={admin} />
       ) : (
         <SettingsAdmin admin={admin} cfg={data.cfg} onDone={() => void refetch()} />
       )}
