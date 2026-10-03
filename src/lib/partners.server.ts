@@ -99,7 +99,7 @@ export async function checkPartner(id: string) {
  * Text per language is optional — falls back to the built-in localized promo.
  */
 export async function sendPartners(opts: {
-  id?: string;
+  id?: string | undefined;
   texts?: Partial<Record<string, string>>;
   photo?: string;
 }) {
@@ -112,7 +112,7 @@ export async function sendPartners(opts: {
     ? [await getDoc<PartnerDoc>(`partners/${opts.id}`)].filter(Boolean) as PartnerDoc[]
     : (await listPartners()).filter((p) => p.active);
   const photo = /^https:\/\//.test(opts.photo ?? "") ? opts.photo! : "";
-  const results: { name: string; ok: boolean; reason?: string }[] = [];
+  const results: { name: string; ok: boolean; reason?: string | undefined }[] = [];
 
   for (const p of all) {
     if (!(await botIsAdmin(p.chat))) {
