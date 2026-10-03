@@ -538,3 +538,58 @@ export const doSetPrefs = createServerFn({ method: "POST" })
       ...(typeof data.notifications === "boolean" ? { notifications: data.notifications } : {}),
     });
   });
+
+/* ----------------------------- partner channels ---------------------------- */
+
+export const adminPartners = createServerFn({ method: "POST" })
+  .inputValidator((d: AdminAuth) => d)
+  .handler(async ({ data }) => {
+    await adminSession(data.initData, data.password);
+    const { listPartners } = await import("./partners.server");
+    return listPartners();
+  });
+
+export const adminPartnerSave = createServerFn({ method: "POST" })
+  .inputValidator((d: AdminAuth & { chat: string; name: string; lang: string; active: boolean }) => d)
+  .handler(async ({ data }) => {
+    await adminSession(data.initData, data.password);
+    const { savePartner } = await import("./partners.server");
+    return savePartner({
+      chat: String(data.chat ?? "").slice(0, 100),
+      name: String(data.name ?? "").slice(0, 60),
+      lang: String(data.lang ?? "en").slice(0, 5),
+      active: !!data.active,
+    });
+  });
+
+export const adminPartnerDelete = createServerFn({ method: "POST" })
+  .inputValidator((d: AdminAuth & { id: string }) => d)
+  .handler(async ({ data }) => {
+    await adminSession(data.initData, data.password);
+    const { removePartner } = await import("./partners.server");
+    return removePartner(String(data.id ?? ""));
+  });
+
+export const adminPartnerCheck = createServerFn({ method: "POST" })
+  .inputValidator((d: AdminAuth & { id: string }) => d)
+  .handler(async ({ data }) => {
+    await adminSession(data.initData, data.password);
+    const { checkPartner } = await import("./partners.server");
+    return checkPartner(String(data.id ?? "").slice(0, 60));
+  });
+
+export const adminPartnerSend = createServerFn({ method: "POST" })
+  .inputValidator(
+    (d: AdminAuth & { id?: string; texts?: Record<string, string>; photo?: string }) => d
+  )
+  .handler(async ({ data }) => {
+    await adminSession(data.initData, data.password);
+    const { sendPartners, PARTNER_LANGS } = await import("./partners.server");
+    const texts: Record<string, string> = {};
+    for (const l of PARTNER_LANGS) texts[l] = String(data.texts?.[l] ?? "").slice(0, 4000);
+    return sendPartners({
+      id: data.id ? String(data.id).slice(0, 60) : undefined,
+      texts,
+      photo: String(data.photo ?? "").slice(0, 500),
+    });
+  });
