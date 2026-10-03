@@ -110,26 +110,25 @@ staleTime: 30000,
             {data.history.map((r, i) => (
               <div
                 key={`${r.name}-${i}`}
-                className="flex items-center justify-between rounded-lg border border-border bg-background/40 px-3 py-2"
+                className="flex items-center gap-3 rounded-2xl border border-border bg-gradient-to-r from-primary/10 to-transparent p-3"
               >
-                <div>
-                  <p className="text-xs font-bold">{r.name}</p>
+                <div className="grid size-9 shrink-0 place-items-center rounded-full bg-gold-gradient text-sm font-black text-primary-foreground">
+                  {(r.name || "?").replace(/^@/, "").charAt(0).toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-bold">{r.name}</p>
                   <p className="text-[10px] text-muted-foreground">
                     {new Date(r.at).toISOString().slice(0, 16).replace("T", " ")} UTC
                   </p>
+                  <div className="mt-1 flex gap-1">
+                    {["pending", "mid", "verified"].map((st, k) => {
+                      const lvl = r.status === "verified" ? 3 : r.status === "mid" ? 2 : r.status === "fake" ? 0 : 1;
+                      return <span key={st} className={`h-1 flex-1 rounded-full ${k < lvl ? "bg-gold-gradient" : "bg-muted"}`} />;
+                    })}
+                  </div>
                 </div>
-                <Pill
-                  tone={
-                    r.status === "verified"
-                      ? "success"
-                      : r.status === "mid"
-                        ? "info"
-                        : r.status === "fake"
-                          ? "danger"
-                          : "warn"
-                  }
-                >
-                  {r.status === "mid" ? "half verified" : r.status}
+                <Pill tone={r.status === "verified" ? "success" : r.status === "mid" ? "info" : r.status === "fake" ? "danger" : "warn"}>
+                  {r.status === "verified" ? "🏆 verified" : r.status === "mid" ? "📅 half" : r.status === "fake" ? "🚫 fake" : "⏳ pending"}
                 </Pill>
               </div>
             ))}
