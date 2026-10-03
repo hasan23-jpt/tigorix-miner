@@ -11,6 +11,10 @@ import adsgramLogo from "@/assets/adsgram-logo.png";
 import monetagLogo from "@/assets/monetag-logo.png";
 import bitvexLogo from "@/assets/adsbitvex-logo.png";
 
+function usdOf(tgx: number) {
+  return `$${(tgx / APP.tokensPerUsd).toFixed(4)}`;
+}
+
 const LOGOS: Partial<Record<AdNet, string>> = {
   int: adsgramLogo,
   reward: adsgramLogo,
@@ -117,6 +121,18 @@ function AdsView() {
   ] as NetworkCard[]).filter((c) => hasBlock(c.blockId));
 
   const totalCap = cards.reduce((sum, c) => sum + c.cap, 0);
+  const totalTgx = cards.reduce((sum, c) => sum + c.cap * c.reward, 0);
+  const earnedTgx = cards.reduce((sum, c) => sum + Math.min(c.seen, c.cap) * c.reward, 0);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const d = new Date(now);
+  const reset = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1) - now;
+  const hh = String(Math.floor(reset / 3600000)).padStart(2, "0");
+  const mm = String(Math.floor((reset % 3600000) / 60000)).padStart(2, "0");
+  const ss = String(Math.floor((reset % 60000) / 1000)).padStart(2, "0");
 
   const watch = (card: NetworkCard) => {
     setPlaying(card.net);
@@ -137,6 +153,20 @@ function AdsView() {
 
   return (
     <>
+      <div className="surface-card flex items-center justify-between p-3">
+        <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">⏰ Ads reset in</span>
+        <span className="font-mono text-lg font-black text-primary">{hh}:{mm}:{ss}</span>
+      </div>
+      <div className="surface-card p-3 text-center">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">💰 Max daily earnings</p>
+        <p className="mt-1 text-xl font-black">
+          <span className="text-gold-gradient">{fmt(totalTgx)} {APP.tokenName}</span>{" "}
+          <span className="text-sm text-success">≈ {usdOf(totalTgx)}</span>
+        </p>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">
+          Earned today: {fmt(earnedTgx)} {APP.tokenName} ({usdOf(earnedTgx)})
+        </p>
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <Stat
           emoji="📺"
@@ -220,6 +250,18 @@ function AdBlockCard({
             {left}/{cap} left
           </Pill>
         </span>
+      </div>
+      <div className="mb-3 grid grid-cols-2 gap-2 text-center text-[11px]">
+        <div className="rounded-lg border border-border bg-background/40 p-2">
+          <p className="text-muted-foreground">Per ad</p>
+          <p className="font-black">{fmt(reward)} {APP.tokenName}</p>
+          <p className="text-success">{usdOf(reward)}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-background/40 p-2">
+          <p className="text-muted-foreground">Daily max ({cap} ads)</p>
+          <p className="font-black">{fmt(reward * cap)} {APP.tokenName}</p>
+          <p className="text-success">{usdOf(reward * cap)}</p>
+        </div>
       </div>
       <div className="mb-4 grid place-items-center rounded-2xl border border-primary/30 bg-background/50 py-8">
         <PlayCircle
